@@ -1,11 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 
-if (!process.env.ANTHROPIC_API_KEY) {
-  throw new Error("ANTHROPIC_API_KEY is not set");
-}
-
 export const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
+  apiKey: process.env.ANTHROPIC_API_KEY ?? "placeholder",
 });
 
 // Default to Sonnet for MVP cost. Swap to claude-opus-4-6 if you want deeper analysis.

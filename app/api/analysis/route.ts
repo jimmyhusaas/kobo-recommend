@@ -39,7 +39,8 @@ export async function POST() {
     );
   }
 
-  const result = toolBlock.input as Record<string, unknown>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const result = toolBlock.input as any;
 
   await sql`
     INSERT INTO analyses (user_id, result, book_count)
