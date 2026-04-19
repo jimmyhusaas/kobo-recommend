@@ -25,6 +25,11 @@ export default function Home() {
     loadBooks();
   }, []);
 
+  async function deleteBook(id: string) {
+    await fetch(`/api/books/${id}`, { method: "DELETE" });
+    setBooks((prev) => prev.filter((b) => b.id !== id));
+  }
+
   async function submit() {
     setLoading(true);
     setMessage(null);
@@ -75,12 +80,21 @@ export default function Home() {
         <h2 className="text-xl font-semibold mb-3">已匯入 {books.length} 本</h2>
         <ul className="divide-y divide-zinc-100 bg-white rounded border border-zinc-200">
           {books.map((b) => (
-            <li key={b.id} className="px-3 py-2 text-sm">
-              <span className="font-medium">{b.title}</span>
-              {b.author && <span className="text-zinc-500"> — {b.author}</span>}
-              {b.rating && (
-                <span className="ml-2 text-xs text-zinc-400">[{b.rating}]</span>
-              )}
+            <li key={b.id} className="px-3 py-2 text-sm flex items-center justify-between group">
+              <div>
+                <span className="font-medium">{b.title}</span>
+                {b.author && <span className="text-zinc-500"> — {b.author}</span>}
+                {b.rating && (
+                  <span className="ml-2 text-xs text-zinc-400">[{b.rating}]</span>
+                )}
+              </div>
+              <button
+                onClick={() => deleteBook(b.id)}
+                className="ml-3 text-zinc-300 hover:text-red-400 opacity-0 group-hover:opacity-100 transition text-xs shrink-0"
+                title="刪除"
+              >
+                ✕
+              </button>
             </li>
           ))}
           {books.length === 0 && (
