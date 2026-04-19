@@ -6,6 +6,7 @@ type Book = {
   title: string;
   author: string | null;
   rating: string | null;
+  exclude_from_analysis: boolean;
   created_at: string;
 };
 
@@ -29,6 +30,17 @@ export default function Home() {
   async function deleteBook(id: string) {
     await fetch(`/api/books/${id}`, { method: "DELETE" });
     setBooks((prev) => prev.filter((b) => b.id !== id));
+  }
+
+  async function toggleExclude(id: string, current: boolean) {
+    await fetch(`/api/books/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ exclude_from_analysis: !current }),
+    });
+    setBooks((prev) =>
+      prev.map((b) => (b.id === id ? { ...b, exclude_from_analysis: !current } : b))
+    );
   }
 
   async function submit() {
@@ -107,13 +119,25 @@ export default function Home() {
         </div>
         <ul className="divide-y divide-zinc-100 bg-white rounded border border-zinc-200">
           {filtered.map((b) => (
-            <li key={b.id} className="px-3 py-2 text-sm flex items-center justify-between group">
-              <div>
-                <span className="font-medium">{b.title}</span>
-                {b.author && <span className="text-zinc-500"> — {b.author}</span>}
-                {b.rating && (
-                  <span className="ml-2 text-xs text-zinc-400">[{b.rating}]</span>
-                )}
+            <li key={b.id} className={`px-3 py-2 text-sm flex items-center justify-between group ${b.exclude_from_analysis ? "bg-zinc-50" : ""}`}>
+              <div className="flex items-center gap-2 min-w-0">
+                <button
+                  onClick={() => toggleExclude(b.id, b.exclude_from_analysis)}
+                  title={b.exclude_from_analysis ? "目前排除分析，點擊納入" : "點擊排除分析"}
+                  className={`shrink-0 w-4 h-4 rounded border transition ${
+                    b.exclude_from_analysis
+                      ? "bg-zinc-300 border-zinc-300"
+                      : "border-zinc-300 hover:border-zinc-500"
+                  }`}
+                />
+                <div className={b.exclude_from_analysis ? "text-zinc-400" : ""}>
+                  <span className="font-medium">{b.title}</span>
+                  {b.author && <span className="text-zinc-500"> — {b.author}</span>}
+                  {b.rating && <span className="ml-2 text-xs text-zinc-400">[{b.rating}]</span>}
+                  {b.exclude_from_analysis && (
+                    <span className="ml-2 text-xs text-zinc-400">（排除分析）</span>
+                  )}
+                </div>
               </div>
               <button
                 onClick={() => deleteBook(b.id)}

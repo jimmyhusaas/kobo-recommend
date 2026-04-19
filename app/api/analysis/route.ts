@@ -8,6 +8,7 @@ export async function POST() {
     SELECT title, author, rating, note
     FROM books_read
     WHERE user_id = ${DEFAULT_USER_ID}
+      AND exclude_from_analysis = false
     ORDER BY created_at ASC
   ` as unknown as Array<{
     title: string;
@@ -18,7 +19,7 @@ export async function POST() {
 
   if (books.length === 0) {
     return NextResponse.json(
-      { error: "還沒有書可以分析，先到首頁匯入" },
+      { error: "沒有可分析的書（書單為空，或全部已被排除）" },
       { status: 400 }
     );
   }
@@ -51,7 +52,7 @@ export async function POST() {
 }
 
 export async function GET() {
-  const [analysisRows, countRows] = await Promise.all([
+  const [analysisRows, countRows, totalRows] = await Promise.all([
     sql`
       SELECT result, book_count, created_at
       FROM analyses
@@ -63,13 +64,21 @@ export async function GET() {
       SELECT COUNT(*)::int AS count
       FROM books_read
       WHERE user_id = ${DEFAULT_USER_ID}
+        AND exclude_from_analysis = false
+    `,
+    sql`
+      SELECT COUNT(*)::int AS count
+      FROM books_read
+      WHERE user_id = ${DEFAULT_USER_ID}
     `,
   ]);
 
   const currentBookCount = (countRows[0] as unknown as { count: number }).count;
+  const totalBookCount = (totalRows[0] as unknown as { count: number }).count;
+  const excludedCount = totalBookCount - currentBookCount;
 
   if (analysisRows.length === 0) {
-    return NextResponse.json({ result: null, current_book_count: currentBookCount });
+    return NextResponse.json({ result: null, current_book_count: currentBookCount, total_book_count: totalBookCount });
   }
 
   return NextResponse.json({
@@ -77,5 +86,7 @@ export async function GET() {
     book_count: analysisRows[0].book_count,
     created_at: analysisRows[0].created_at,
     current_book_count: currentBookCount,
+    total_book_count: totalBookCount,
+    excluded_count: excludedCount,
   });
 }
