@@ -10,8 +10,9 @@ function isStatus(s: unknown): s is Status {
 
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
   let body: { status?: unknown };
   try {
     body = await req.json();
@@ -29,7 +30,7 @@ export async function PATCH(
   const result = (await sql`
     UPDATE recommendations
     SET status = ${body.status}
-    WHERE id = ${params.id} AND user_id = ${DEFAULT_USER_ID}
+    WHERE id = ${id} AND user_id = ${DEFAULT_USER_ID}
     RETURNING id, status
   `) as unknown as Array<{ id: string; status: string }>;
 
