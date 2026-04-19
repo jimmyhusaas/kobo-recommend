@@ -65,6 +65,27 @@ export default function Home() {
     }
   }
 
+  function exportCSV() {
+    const header = ["書名", "作者", "評價", "排除分析", "匯入時間"];
+    const rows = books.map((b) => [
+      b.title,
+      b.author ?? "",
+      b.rating ?? "",
+      b.exclude_from_analysis ? "是" : "否",
+      new Date(b.created_at).toLocaleDateString("zh-TW"),
+    ]);
+    const csv = [header, ...rows]
+      .map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(","))
+      .join("\n");
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `書單_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   const q = search.trim().toLowerCase();
   const filtered = q
     ? books.filter(
@@ -108,13 +129,22 @@ export default function Home() {
             {search && <span className="text-base font-normal text-zinc-400 ml-2">（顯示 {filtered.length} 筆）</span>}
           </h2>
           {books.length > 0 && (
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="搜尋書名 / 作者"
-              className="px-3 py-1.5 text-sm border border-zinc-300 rounded w-44"
-            />
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="搜尋書名 / 作者"
+                className="px-3 py-1.5 text-sm border border-zinc-300 rounded w-44"
+              />
+              <button
+                onClick={exportCSV}
+                className="px-3 py-1.5 text-sm border border-zinc-300 rounded hover:bg-zinc-50 shrink-0"
+                title="匯出 CSV"
+              >
+                ↓ CSV
+              </button>
+            </div>
           )}
         </div>
         <ul className="divide-y divide-zinc-100 bg-white rounded border border-zinc-200">
