@@ -18,8 +18,9 @@ type AnalysisResult = {
 
 type AnalysisMeta = {
   created_at: string;
-  book_count: number;
-  current_book_count: number;
+  book_count: number;       // 上次分析時納入的本數
+  current_book_count: number; // 目前未排除的本數
+  total_book_count: number;   // 書單總本數（含排除）
 };
 
 function timeAgo(iso: string): string {
@@ -95,6 +96,7 @@ export default function AnalysisPage() {
         created_at: data.created_at,
         book_count: data.book_count,
         current_book_count: data.current_book_count,
+        total_book_count: data.total_book_count,
       });
     }
   }
@@ -133,7 +135,14 @@ export default function AnalysisPage() {
 
       {/* 書單變動提示 */}
       {meta && !loading && (
-        <StatusBanner meta={meta} onRerun={run} />
+        <>
+          <StatusBanner meta={meta} onRerun={run} />
+          {meta.total_book_count > meta.current_book_count && (
+            <p className="text-xs text-zinc-400">
+              書單共 {meta.total_book_count} 本，已排除 {meta.total_book_count - meta.current_book_count} 本，本次分析納入 {meta.current_book_count} 本
+            </p>
+          )}
+        </>
       )}
 
       {loading && (

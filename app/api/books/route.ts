@@ -80,7 +80,7 @@ export async function POST(req: NextRequest) {
 
 export async function GET() {
   const books = await sql`
-    SELECT id, title, author, rating, created_at
+    SELECT id, title, author, rating, exclude_from_analysis, created_at
     FROM books_read
     WHERE user_id = ${DEFAULT_USER_ID}
     ORDER BY created_at DESC, id DESC
