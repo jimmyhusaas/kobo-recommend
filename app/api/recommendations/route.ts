@@ -20,6 +20,34 @@ type RecommendedBook = {
   next_book?: string;
 };
 
+export async function GET() {
+  const rows = await sql`
+    SELECT id, batch_id, title, author, status, rationale, created_at
+    FROM recommendations
+    WHERE user_id = ${DEFAULT_USER_ID}
+    ORDER BY created_at DESC
+  ` as unknown as Array<{
+    id: string;
+    batch_id: string;
+    title: string;
+    author: string | null;
+    status: string;
+    rationale: Record<string, unknown> | null;
+    created_at: string;
+  }>;
+
+  // group by batch_id，保留每個 batch 的第一筆 created_at 作為代表
+  const batchMap = new Map<string, { batch_id: string; created_at: string; books: typeof rows }>();
+  for (const row of rows) {
+    if (!batchMap.has(row.batch_id)) {
+      batchMap.set(row.batch_id, { batch_id: row.batch_id, created_at: row.created_at, books: [] });
+    }
+    batchMap.get(row.batch_id)!.books.push(row);
+  }
+
+  return NextResponse.json({ batches: Array.from(batchMap.values()) });
+}
+
 export async function POST(req: NextRequest) {
   let body: { directions?: string[]; count?: number };
   try {
