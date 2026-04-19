@@ -51,21 +51,31 @@ export async function POST() {
 }
 
 export async function GET() {
-  const rows = await sql`
-    SELECT result, book_count, created_at
-    FROM analyses
-    WHERE user_id = ${DEFAULT_USER_ID}
-    ORDER BY created_at DESC
-    LIMIT 1
-  `;
+  const [analysisRows, countRows] = await Promise.all([
+    sql`
+      SELECT result, book_count, created_at
+      FROM analyses
+      WHERE user_id = ${DEFAULT_USER_ID}
+      ORDER BY created_at DESC
+      LIMIT 1
+    `,
+    sql`
+      SELECT COUNT(*)::int AS count
+      FROM books_read
+      WHERE user_id = ${DEFAULT_USER_ID}
+    `,
+  ]);
 
-  if (rows.length === 0) {
-    return NextResponse.json({ result: null });
+  const currentBookCount = (countRows[0] as unknown as { count: number }).count;
+
+  if (analysisRows.length === 0) {
+    return NextResponse.json({ result: null, current_book_count: currentBookCount });
   }
 
   return NextResponse.json({
-    result: rows[0].result,
-    book_count: rows[0].book_count,
-    created_at: rows[0].created_at,
+    result: analysisRows[0].result,
+    book_count: analysisRows[0].book_count,
+    created_at: analysisRows[0].created_at,
+    current_book_count: currentBookCount,
   });
 }
