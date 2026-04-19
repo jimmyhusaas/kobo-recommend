@@ -12,6 +12,7 @@ type Book = {
 export default function Home() {
   const [text, setText] = useState("");
   const [books, setBooks] = useState<Book[]>([]);
+  const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -52,6 +53,15 @@ export default function Home() {
     }
   }
 
+  const q = search.trim().toLowerCase();
+  const filtered = q
+    ? books.filter(
+        (b) =>
+          b.title.toLowerCase().includes(q) ||
+          (b.author?.toLowerCase().includes(q) ?? false)
+      )
+    : books;
+
   return (
     <div className="space-y-8">
       <section>
@@ -80,9 +90,23 @@ export default function Home() {
       </section>
 
       <section>
-        <h2 className="text-xl font-semibold mb-3">已匯入 {books.length} 本</h2>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-xl font-semibold">
+            已匯入 {books.length} 本
+            {search && <span className="text-base font-normal text-zinc-400 ml-2">（顯示 {filtered.length} 筆）</span>}
+          </h2>
+          {books.length > 0 && (
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="搜尋書名 / 作者"
+              className="px-3 py-1.5 text-sm border border-zinc-300 rounded w-44"
+            />
+          )}
+        </div>
         <ul className="divide-y divide-zinc-100 bg-white rounded border border-zinc-200">
-          {books.map((b) => (
+          {filtered.map((b) => (
             <li key={b.id} className="px-3 py-2 text-sm flex items-center justify-between group">
               <div>
                 <span className="font-medium">{b.title}</span>
@@ -100,6 +124,9 @@ export default function Home() {
               </button>
             </li>
           ))}
+          {filtered.length === 0 && books.length > 0 && (
+            <li className="px-3 py-6 text-sm text-zinc-400 text-center">找不到「{search}」</li>
+          )}
           {books.length === 0 && (
             <li className="px-3 py-6 text-sm text-zinc-400 text-center">還沒有書</li>
           )}
