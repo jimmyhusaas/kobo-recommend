@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { sql, DEFAULT_USER_ID } from "@/lib/db";
-import { anthropic, MODEL } from "@/lib/claude";
+import { anthropic, MODEL, calcCost } from "@/lib/claude";
 import { ANALYSIS_TOOL, analysisPrompt } from "@/lib/prompts";
 
 export async function POST() {
@@ -43,10 +43,19 @@ export async function POST() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const result = toolBlock.input as any;
 
-  await sql`
-    INSERT INTO analyses (user_id, result, book_count)
-    VALUES (${DEFAULT_USER_ID}, ${sql.json(result)}, ${books.length})
-  `;
+  const { input_tokens, output_tokens } = response.usage;
+  const costUsd = calcCost(input_tokens, output_tokens);
+
+  await Promise.all([
+    sql`
+      INSERT INTO analyses (user_id, result, book_count)
+      VALUES (${DEFAULT_USER_ID}, ${sql.json(result)}, ${books.length})
+    `,
+    sql`
+      INSERT INTO api_calls (user_id, type, input_tokens, output_tokens, cost_usd)
+      VALUES (${DEFAULT_USER_ID}, 'analysis', ${input_tokens}, ${output_tokens}, ${costUsd})
+    `,
+  ]);
 
   return NextResponse.json(result);
 }

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import { sql, DEFAULT_USER_ID } from "@/lib/db";
-import { anthropic, MODEL } from "@/lib/claude";
+import { anthropic, MODEL, calcCost } from "@/lib/claude";
 import { RECOMMEND_TOOL, recommendPrompt } from "@/lib/prompts";
 
 type Prefs = {
@@ -139,20 +139,22 @@ export async function POST(req: NextRequest) {
     }),
   }));
 
+  const { input_tokens, output_tokens } = response.usage;
+  const costUsd = calcCost(input_tokens, output_tokens);
+
   let inserted: Array<{ id: string }> = [];
-  if (rows.length > 0) {
-    inserted = (await sql`
-      INSERT INTO recommendations ${sql(
-        rows,
-        "user_id",
-        "batch_id",
-        "title",
-        "author",
-        "rationale"
-      )}
-      RETURNING id
-    `) as unknown as Array<{ id: string }>;
-  }
+  await Promise.all([
+    rows.length > 0
+      ? sql`
+          INSERT INTO recommendations ${sql(rows, "user_id", "batch_id", "title", "author", "rationale")}
+          RETURNING id
+        `.then((r) => { inserted = r as unknown as Array<{ id: string }>; })
+      : Promise.resolve(),
+    sql`
+      INSERT INTO api_calls (user_id, type, input_tokens, output_tokens, cost_usd)
+      VALUES (${DEFAULT_USER_ID}, 'recommendation', ${input_tokens}, ${output_tokens}, ${costUsd})
+    `,
+  ]);
 
   const booksWithIds = (result.books ?? []).map((b, i) => ({
     ...b,

@@ -21,6 +21,7 @@ export default function RootLayout({
             <a href="/analysis" className="hover:underline text-zinc-600">分析</a>
             <a href="/recommend" className="hover:underline text-zinc-600">推薦</a>
             <a href="/history" className="hover:underline text-zinc-600">歷史</a>
+            <a href="/cost" className="hover:underline text-zinc-600">費用</a>
           </nav>
         </header>
         <main className="max-w-3xl mx-auto px-4 py-8">{children}</main>
