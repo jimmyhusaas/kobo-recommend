@@ -8,11 +8,8 @@ function isStatus(s: unknown): s is Status {
   return typeof s === "string" && (ALLOWED as readonly string[]).includes(s);
 }
 
-export async function PATCH(
-  req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  const { id } = await params;
+export async function PATCH(req: NextRequest) {
+  const id = req.nextUrl.pathname.split("/").pop()!;
   let body: { status?: unknown };
   try {
     body = await req.json();
