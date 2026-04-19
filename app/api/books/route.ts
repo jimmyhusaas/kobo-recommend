@@ -50,7 +50,20 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "no books parsed" }, { status: 400 });
   }
 
-  const rows = books.map((b) => ({
+  // 撈出已有書名（小寫比對，避免大小寫差異造成重複）
+  const existing = await sql`
+    SELECT lower(title) AS title FROM books_read WHERE user_id = ${DEFAULT_USER_ID}
+  ` as unknown as Array<{ title: string }>;
+  const existingTitles = new Set(existing.map((r) => r.title));
+
+  const newBooks = books.filter((b) => !existingTitles.has(b.title.toLowerCase()));
+  const skipped = books.length - newBooks.length;
+
+  if (newBooks.length === 0) {
+    return NextResponse.json({ inserted: 0, skipped, message: `全部 ${skipped} 本已存在，略過` });
+  }
+
+  const rows = newBooks.map((b) => ({
     user_id: DEFAULT_USER_ID,
     title: b.title,
     author: b.author,
@@ -62,7 +75,7 @@ export async function POST(req: NextRequest) {
     RETURNING id
   `;
 
-  return NextResponse.json({ inserted: inserted.length });
+  return NextResponse.json({ inserted: inserted.length, skipped });
 }
 
 export async function GET() {

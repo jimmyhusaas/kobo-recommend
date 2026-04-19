@@ -40,9 +40,12 @@ export default function Home() {
     });
     const data = await res.json();
     setLoading(false);
-    if (data.inserted) {
+    if (data.inserted !== undefined) {
       setText("");
-      setMessage(`匯入 ${data.inserted} 本`);
+      const parts = [];
+      if (data.inserted > 0) parts.push(`匯入 ${data.inserted} 本`);
+      if (data.skipped > 0) parts.push(`${data.skipped} 本已存在略過`);
+      setMessage(parts.join("，") || data.message || "完成");
       loadBooks();
     } else {
       setMessage(data.error ?? "匯入失敗");
