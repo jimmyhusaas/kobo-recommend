@@ -6,6 +6,7 @@ type Book = {
   title: string;
   author: string | null;
   status: string;
+  inList?: boolean;
   rationale: {
     why_you?: string;
     core_concepts?: string;
@@ -21,20 +22,6 @@ type Batch = {
   books: Book[];
 };
 
-const STATUS_LABEL: Record<string, string> = {
-  pending: "待讀",
-  read: "已讀",
-  rejected: "跳過",
-  skipped: "跳過",
-};
-
-const STATUS_COLOR: Record<string, string> = {
-  pending: "text-zinc-400",
-  read: "text-green-600",
-  rejected: "text-red-400",
-  skipped: "text-red-400",
-};
-
 export default function HistoryPage() {
   const [batches, setBatches] = useState<Batch[]>([]);
   const [loading, setLoading] = useState(true);
@@ -45,7 +32,6 @@ export default function HistoryPage() {
       .then((r) => r.json())
       .then((d) => {
         setBatches(d.batches ?? []);
-        // 預設展開最新一批
         if (d.batches?.length > 0) {
           setExpanded(new Set([d.batches[0].batch_id]));
         }
@@ -53,7 +39,7 @@ export default function HistoryPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  async function updateStatus(id: string, status: string, batchId: string) {
+  async function patchStatus(id: string, status: string, batchId: string) {
     await fetch(`/api/recommendations/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -66,6 +52,27 @@ export default function HistoryPage() {
           : b
       )
     );
+  }
+
+  async function addToList(book: Book, batchId: string) {
+    const text = book.author ? `${book.title} — ${book.author}` : book.title;
+    await fetch("/api/books", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    });
+    setBatches((prev) =>
+      prev.map((b) =>
+        b.batch_id === batchId
+          ? { ...b, books: b.books.map((bk) => (bk.id === book.id ? { ...bk, inList: true } : bk)) }
+          : b
+      )
+    );
+  }
+
+  async function markFinished(book: Book, batchId: string) {
+    await addToList(book, batchId);
+    await patchStatus(book.id, "read", batchId);
   }
 
   function toggleBatch(batchId: string) {
@@ -96,11 +103,14 @@ export default function HistoryPage() {
   return (
     <div className="space-y-4">
       <h1 className="text-2xl font-bold">推薦歷史</h1>
-      <p className="text-sm text-zinc-500">共 {batches.length} 批推薦，{batches.reduce((s, b) => s + b.books.length, 0)} 本書</p>
+      <p className="text-sm text-zinc-500">
+        共 {batches.length} 批推薦，{batches.reduce((s, b) => s + b.books.length, 0)} 本書
+      </p>
 
       {batches.map((batch, idx) => {
         const isOpen = expanded.has(batch.batch_id);
         const readCount = batch.books.filter((b) => b.status === "read").length;
+
         return (
           <div key={batch.batch_id} className="border border-zinc-200 rounded bg-white">
             <button
@@ -108,13 +118,11 @@ export default function HistoryPage() {
               className="w-full px-4 py-3 flex items-center justify-between text-left hover:bg-zinc-50"
             >
               <div>
-                <span className="font-medium">
-                  第 {batches.length - idx} 批
-                </span>
+                <span className="font-medium">第 {batches.length - idx} 批</span>
                 <span className="text-zinc-400 text-sm ml-2">{formatDate(batch.created_at)}</span>
               </div>
               <div className="flex items-center gap-3 text-sm text-zinc-500">
-                <span>{readCount}/{batch.books.length} 已讀</span>
+                <span>{readCount}/{batch.books.length} 已讀完</span>
                 <span>{isOpen ? "▲" : "▼"}</span>
               </div>
             </button>
@@ -135,36 +143,57 @@ export default function HistoryPage() {
                           </span>
                         )}
                       </div>
-                      <span className={`text-xs shrink-0 ${STATUS_COLOR[book.status] ?? "text-zinc-400"}`}>
-                        {STATUS_LABEL[book.status] ?? book.status}
-                      </span>
+
+                      {/* 狀態標籤 */}
+                      <div className="shrink-0 text-right space-y-0.5">
+                        {book.status === "read" && (
+                          <div className="text-xs text-green-600 font-medium">已讀完 ✓</div>
+                        )}
+                        {book.status === "skipped" && (
+                          <div className="text-xs text-zinc-400">已跳過</div>
+                        )}
+                        {(book.inList && book.status !== "read") && (
+                          <div className="text-xs text-blue-500">已加入書單</div>
+                        )}
+                      </div>
                     </div>
 
                     {book.rationale?.why_you && (
                       <p className="text-xs text-zinc-500">{book.rationale.why_you}</p>
                     )}
 
-                    <div className="flex gap-1 pt-1">
+                    {/* 動作按鈕 */}
+                    <div className="flex flex-wrap gap-1 pt-1">
                       {book.status !== "read" && (
-                        <button
-                          onClick={() => updateStatus(book.id, "read", batch.batch_id)}
-                          className="px-2 py-0.5 text-xs rounded border border-zinc-300 hover:bg-green-50 hover:border-green-400"
-                        >
-                          標為已讀
-                        </button>
+                        <>
+                          {!book.inList && (
+                            <button
+                              onClick={() => addToList(book, batch.batch_id)}
+                              className="px-2 py-0.5 text-xs rounded border border-zinc-300 hover:bg-zinc-50"
+                            >
+                              + 加入書單
+                            </button>
+                          )}
+                          <button
+                            onClick={() => markFinished(book, batch.batch_id)}
+                            className="px-2 py-0.5 text-xs rounded border border-green-300 text-green-700 hover:bg-green-50"
+                          >
+                            已讀完
+                          </button>
+                          {book.status !== "skipped" && (
+                            <button
+                              onClick={() => patchStatus(book.id, "skipped", batch.batch_id)}
+                              className="px-2 py-0.5 text-xs rounded border border-zinc-300 text-zinc-500 hover:bg-zinc-50"
+                            >
+                              跳過
+                            </button>
+                          )}
+                        </>
                       )}
-                      {book.status !== "skipped" && book.status !== "rejected" && (
+                      {(book.status === "read" || book.status === "skipped") && (
                         <button
-                          onClick={() => updateStatus(book.id, "skipped", batch.batch_id)}
-                          className="px-2 py-0.5 text-xs rounded border border-zinc-300 hover:bg-red-50 hover:border-red-400"
-                        >
-                          跳過
-                        </button>
-                      )}
-                      {(book.status === "read" || book.status === "skipped" || book.status === "rejected") && (
-                        <button
-                          onClick={() => updateStatus(book.id, "pending", batch.batch_id)}
-                          className="px-2 py-0.5 text-xs rounded border border-zinc-300 hover:bg-zinc-100"
+                          onClick={() => patchStatus(book.id, "pending", batch.batch_id)}
+                          className="px-2 py-0.5 text-xs rounded border border-zinc-300 hover:bg-zinc-100 text-zinc-400"
                         >
                           重設
                         </button>

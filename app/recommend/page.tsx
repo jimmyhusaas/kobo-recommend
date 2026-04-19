@@ -21,7 +21,7 @@ type RecBook = {
   core_concepts: string;
   next_book?: string;
   status?: string;
-  addedToList?: boolean;
+  inList?: boolean; // 是否已加入書單
 };
 
 type Batch = {
@@ -56,48 +56,55 @@ export default function RecommendPage() {
     setDirections((prev) => prev.filter((x) => x !== d));
   }
 
-  const allDirections = [...directions];
-
   async function run() {
     setLoading(true);
     setError(null);
     const res = await fetch("/api/recommendations", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ directions: allDirections, count }),
+      body: JSON.stringify({ directions, count }),
     });
     const data = await res.json();
     setLoading(false);
-    if (res.ok) {
-      setBatch(data);
-    } else {
-      setError(data.error ?? "推薦失敗");
-    }
+    if (res.ok) setBatch(data);
+    else setError(data.error ?? "推薦失敗");
   }
 
-  async function updateStatus(id: string | undefined, status: string) {
+  async function patchStatus(id: string | undefined, status: string) {
     if (!id) return;
     await fetch(`/api/recommendations/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status }),
     });
-    setBatch((b) =>
-      b ? { ...b, books: b.books.map((x) => (x.id === id ? { ...x, status } : x)) } : b
-    );
   }
 
-  async function addToReadList(book: RecBook) {
-    const text = book.author
-      ? `${book.title} — ${book.author}`
-      : book.title;
+  async function addToList(book: RecBook) {
+    const text = book.author ? `${book.title} — ${book.author}` : book.title;
     await fetch("/api/books", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text }),
     });
     setBatch((b) =>
-      b ? { ...b, books: b.books.map((x) => (x.id === book.id ? { ...x, addedToList: true } : x)) } : b
+      b ? { ...b, books: b.books.map((x) => (x.id === book.id ? { ...x, inList: true } : x)) } : b
+    );
+  }
+
+  // 已讀完：加進書單 + 更新 status
+  async function markFinished(book: RecBook) {
+    await addToList(book);
+    await patchStatus(book.id, "read");
+    setBatch((b) =>
+      b ? { ...b, books: b.books.map((x) => (x.id === book.id ? { ...x, status: "read", inList: true } : x)) } : b
+    );
+  }
+
+  // 跳過：只更新 status
+  async function markSkipped(book: RecBook) {
+    await patchStatus(book.id, "skipped");
+    setBatch((b) =>
+      b ? { ...b, books: b.books.map((x) => (x.id === book.id ? { ...x, status: "skipped" } : x)) } : b
     );
   }
 
@@ -106,7 +113,6 @@ export default function RecommendPage() {
       <h1 className="text-2xl font-bold">下一批推薦</h1>
 
       <section className="space-y-4 p-4 bg-white border border-zinc-200 rounded">
-        {/* 預設方向 */}
         <div>
           <label className="block text-sm font-medium mb-2">
             方向（可複選，建議最多 2 個）
@@ -128,7 +134,6 @@ export default function RecommendPage() {
           </div>
         </div>
 
-        {/* 自訂方向輸入 */}
         <div>
           <label className="block text-sm font-medium mb-2">自訂方向</label>
           <div className="flex gap-2">
@@ -150,14 +155,10 @@ export default function RecommendPage() {
           </div>
         </div>
 
-        {/* 已選方向（含自訂）*/}
         {directions.length > 0 && (
           <div className="flex flex-wrap gap-2">
             {directions.map((d) => (
-              <span
-                key={d}
-                className="flex items-center gap-1 px-2 py-1 text-xs bg-zinc-900 text-white rounded"
-              >
+              <span key={d} className="flex items-center gap-1 px-2 py-1 text-xs bg-zinc-900 text-white rounded">
                 {d}
                 <button onClick={() => removeDirection(d)} className="hover:text-zinc-300">✕</button>
               </span>
@@ -165,7 +166,6 @@ export default function RecommendPage() {
           </div>
         )}
 
-        {/* 數量 */}
         <div>
           <label className="block text-sm font-medium mb-2">數量</label>
           <input
@@ -201,63 +201,57 @@ export default function RecommendPage() {
       )}
 
       {batch?.books.map((b, i) => (
-        <article
-          key={b.id ?? i}
-          className="p-4 bg-white border border-zinc-200 rounded space-y-2"
-        >
+        <article key={b.id ?? i} className="p-4 bg-white border border-zinc-200 rounded space-y-2">
           <div className="flex items-start justify-between gap-3">
             <div>
               <h3 className="font-semibold">
                 {i + 1}. 《{b.title}》
                 {b.title_original && (
-                  <span className="text-zinc-500 text-sm font-normal">
-                    {" "}— {b.title_original}
-                  </span>
+                  <span className="text-zinc-500 text-sm font-normal"> — {b.title_original}</span>
                 )}
               </h3>
               <div className="text-xs text-zinc-500">
                 {b.author} ({b.author_nationality}) · 阻力：{b.reading_resistance}
               </div>
             </div>
+
+            {/* 三個動作按鈕 */}
             <div className="flex flex-col gap-1 shrink-0 items-end">
-              <div className="flex gap-1">
-                <button
-                  onClick={() => updateStatus(b.id, "read")}
-                  className={`px-2 py-1 text-xs rounded border ${
-                    b.status === "read"
-                      ? "bg-green-100 border-green-400"
-                      : "border-zinc-300 hover:border-zinc-500"
-                  }`}
-                >
-                  已讀
-                </button>
-                <button
-                  onClick={() => updateStatus(b.id, "rejected")}
-                  className={`px-2 py-1 text-xs rounded border ${
-                    b.status === "rejected"
-                      ? "bg-red-100 border-red-400"
-                      : "border-zinc-300 hover:border-zinc-500"
-                  }`}
-                >
-                  跳過
-                </button>
-              </div>
-              <button
-                onClick={() => addToReadList(b)}
-                disabled={b.addedToList}
-                className="px-2 py-1 text-xs rounded border border-zinc-300 hover:bg-zinc-50 disabled:opacity-40 disabled:cursor-default"
-              >
-                {b.addedToList ? "已加入書單 ✓" : "+ 加入書單"}
-              </button>
+              {b.status === "read" ? (
+                <span className="text-xs text-green-600 font-medium">已讀完 ✓</span>
+              ) : b.status === "skipped" ? (
+                <span className="text-xs text-zinc-400">已跳過</span>
+              ) : (
+                <>
+                  <button
+                    onClick={() => addToList(b)}
+                    disabled={b.inList}
+                    className="px-2 py-1 text-xs rounded border border-zinc-300 hover:bg-zinc-50 disabled:opacity-50 disabled:cursor-default whitespace-nowrap"
+                  >
+                    {b.inList ? "已加入書單 ✓" : "+ 加入書單"}
+                  </button>
+                  <button
+                    onClick={() => markFinished(b)}
+                    className="px-2 py-1 text-xs rounded border border-green-300 text-green-700 hover:bg-green-50 whitespace-nowrap"
+                  >
+                    已讀完
+                  </button>
+                  <button
+                    onClick={() => markSkipped(b)}
+                    className="px-2 py-1 text-xs rounded border border-zinc-300 text-zinc-500 hover:bg-zinc-50 whitespace-nowrap"
+                  >
+                    跳過
+                  </button>
+                </>
+              )}
             </div>
           </div>
+
           <div className="text-sm">
-            <span className="font-medium">為什麼是你：</span>
-            {b.why_you}
+            <span className="font-medium">為什麼是你：</span>{b.why_you}
           </div>
           <div className="text-sm">
-            <span className="font-medium">核心概念：</span>
-            {b.core_concepts}
+            <span className="font-medium">核心概念：</span>{b.core_concepts}
           </div>
           {b.next_book && (
             <div className="text-xs text-zinc-500">讀完下一步：{b.next_book}</div>
@@ -269,9 +263,7 @@ export default function RecommendPage() {
         <section className="p-3 bg-zinc-100 rounded text-sm">
           <div className="font-medium mb-1">建議順序</div>
           <ol className="list-decimal pl-5">
-            {batch.reading_order.map((t, i) => (
-              <li key={i}>{t}</li>
-            ))}
+            {batch.reading_order.map((t, i) => <li key={i}>{t}</li>)}
           </ol>
         </section>
       )}
