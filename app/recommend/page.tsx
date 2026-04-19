@@ -21,6 +21,7 @@ type RecBook = {
   core_concepts: string;
   next_book?: string;
   status?: string;
+  addedToList?: boolean;
 };
 
 type Batch = {
@@ -32,6 +33,7 @@ type Batch = {
 
 export default function RecommendPage() {
   const [directions, setDirections] = useState<string[]>([]);
+  const [customDirection, setCustomDirection] = useState("");
   const [count, setCount] = useState(3);
   const [batch, setBatch] = useState<Batch | null>(null);
   const [loading, setLoading] = useState(false);
@@ -43,13 +45,26 @@ export default function RecommendPage() {
     );
   }
 
+  function addCustomDirection() {
+    const d = customDirection.trim();
+    if (!d || directions.includes(d)) return;
+    setDirections((prev) => [...prev, d]);
+    setCustomDirection("");
+  }
+
+  function removeDirection(d: string) {
+    setDirections((prev) => prev.filter((x) => x !== d));
+  }
+
+  const allDirections = [...directions];
+
   async function run() {
     setLoading(true);
     setError(null);
     const res = await fetch("/api/recommendations", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ directions, count }),
+      body: JSON.stringify({ directions: allDirections, count }),
     });
     const data = await res.json();
     setLoading(false);
@@ -68,12 +83,21 @@ export default function RecommendPage() {
       body: JSON.stringify({ status }),
     });
     setBatch((b) =>
-      b
-        ? {
-            ...b,
-            books: b.books.map((x) => (x.id === id ? { ...x, status } : x)),
-          }
-        : b
+      b ? { ...b, books: b.books.map((x) => (x.id === id ? { ...x, status } : x)) } : b
+    );
+  }
+
+  async function addToReadList(book: RecBook) {
+    const text = book.author
+      ? `${book.title} — ${book.author}`
+      : book.title;
+    await fetch("/api/books", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    });
+    setBatch((b) =>
+      b ? { ...b, books: b.books.map((x) => (x.id === book.id ? { ...x, addedToList: true } : x)) } : b
     );
   }
 
@@ -82,6 +106,7 @@ export default function RecommendPage() {
       <h1 className="text-2xl font-bold">下一批推薦</h1>
 
       <section className="space-y-4 p-4 bg-white border border-zinc-200 rounded">
+        {/* 預設方向 */}
         <div>
           <label className="block text-sm font-medium mb-2">
             方向（可複選，建議最多 2 個）
@@ -102,6 +127,45 @@ export default function RecommendPage() {
             ))}
           </div>
         </div>
+
+        {/* 自訂方向輸入 */}
+        <div>
+          <label className="block text-sm font-medium mb-2">自訂方向</label>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={customDirection}
+              onChange={(e) => setCustomDirection(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && addCustomDirection()}
+              placeholder="例：台灣本土作品、科幻小說入門..."
+              className="flex-1 p-2 text-sm border border-zinc-300 rounded"
+            />
+            <button
+              onClick={addCustomDirection}
+              disabled={!customDirection.trim()}
+              className="px-3 py-2 text-sm border border-zinc-300 rounded hover:bg-zinc-50 disabled:opacity-40"
+            >
+              加入
+            </button>
+          </div>
+        </div>
+
+        {/* 已選方向（含自訂）*/}
+        {directions.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {directions.map((d) => (
+              <span
+                key={d}
+                className="flex items-center gap-1 px-2 py-1 text-xs bg-zinc-900 text-white rounded"
+              >
+                {d}
+                <button onClick={() => removeDirection(d)} className="hover:text-zinc-300">✕</button>
+              </span>
+            ))}
+          </div>
+        )}
+
+        {/* 數量 */}
         <div>
           <label className="block text-sm font-medium mb-2">數量</label>
           <input
@@ -113,6 +177,7 @@ export default function RecommendPage() {
             className="w-20 p-2 border border-zinc-300 rounded"
           />
         </div>
+
         <button
           onClick={run}
           disabled={loading || directions.length === 0}
@@ -151,30 +216,38 @@ export default function RecommendPage() {
                 )}
               </h3>
               <div className="text-xs text-zinc-500">
-                {b.author} ({b.author_nationality}) · 阻力：
-                {b.reading_resistance}
+                {b.author} ({b.author_nationality}) · 阻力：{b.reading_resistance}
               </div>
             </div>
-            <div className="flex gap-1 shrink-0">
+            <div className="flex flex-col gap-1 shrink-0 items-end">
+              <div className="flex gap-1">
+                <button
+                  onClick={() => updateStatus(b.id, "read")}
+                  className={`px-2 py-1 text-xs rounded border ${
+                    b.status === "read"
+                      ? "bg-green-100 border-green-400"
+                      : "border-zinc-300 hover:border-zinc-500"
+                  }`}
+                >
+                  已讀
+                </button>
+                <button
+                  onClick={() => updateStatus(b.id, "rejected")}
+                  className={`px-2 py-1 text-xs rounded border ${
+                    b.status === "rejected"
+                      ? "bg-red-100 border-red-400"
+                      : "border-zinc-300 hover:border-zinc-500"
+                  }`}
+                >
+                  跳過
+                </button>
+              </div>
               <button
-                onClick={() => updateStatus(b.id, "read")}
-                className={`px-2 py-1 text-xs rounded border ${
-                  b.status === "read"
-                    ? "bg-green-100 border-green-400"
-                    : "border-zinc-300 hover:border-zinc-500"
-                }`}
+                onClick={() => addToReadList(b)}
+                disabled={b.addedToList}
+                className="px-2 py-1 text-xs rounded border border-zinc-300 hover:bg-zinc-50 disabled:opacity-40 disabled:cursor-default"
               >
-                已讀
-              </button>
-              <button
-                onClick={() => updateStatus(b.id, "rejected")}
-                className={`px-2 py-1 text-xs rounded border ${
-                  b.status === "rejected"
-                    ? "bg-red-100 border-red-400"
-                    : "border-zinc-300 hover:border-zinc-500"
-                }`}
-              >
-                跳過
+                {b.addedToList ? "已加入書單 ✓" : "+ 加入書單"}
               </button>
             </div>
           </div>
