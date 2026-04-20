@@ -142,6 +142,14 @@ export default function HistoryPage() {
                             · 阻力 {book.rationale.reading_resistance}
                           </span>
                         )}
+                        <a
+                          href={`https://search.books.com.tw/search/query/key/${encodeURIComponent(book.title)}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="ml-2 text-xs text-blue-500 hover:underline"
+                        >
+                          博客來 ↗
+                        </a>
                       </div>
 
                       {/* 狀態標籤 */}

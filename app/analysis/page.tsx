@@ -160,18 +160,25 @@ export default function AnalysisPage() {
       {analysis && (
         <>
           <section>
-            <h2 className="text-lg font-semibold mb-2">
-              類型分佈（總計 {analysis.total_books} 本）
+            <h2 className="text-lg font-semibold mb-3">
+              閱讀輪廓（{analysis.total_books} 本）
             </h2>
-            <ul className="space-y-2">
+            <ul className="space-y-3">
               {analysis.categories.map((c, i) => (
-                <li key={i} className="p-3 border border-zinc-200 rounded bg-white">
-                  <div className="flex justify-between">
+                <li key={i}>
+                  <div className="flex justify-between text-sm mb-1">
                     <span className="font-medium">{c.name}</span>
-                    <span className="text-zinc-500 text-sm">{c.count} 本 / {c.percentage}%</span>
+                    <span className="text-zinc-400">{c.count} 本 · {c.percentage}%</span>
+                  </div>
+                  {/* bar */}
+                  <div className="h-2 bg-zinc-100 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-zinc-800 rounded-full transition-all"
+                      style={{ width: `${c.percentage}%` }}
+                    />
                   </div>
                   {c.books?.length > 0 && (
-                    <div className="text-xs text-zinc-500 mt-1">{c.books.join("、")}</div>
+                    <div className="text-xs text-zinc-400 mt-1 truncate">{c.books.join("、")}</div>
                   )}
                 </li>
               ))}

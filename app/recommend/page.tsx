@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 const DIRECTION_OPTIONS = [
   "技術深度（系統設計 / 架構）",
@@ -31,6 +31,17 @@ type Batch = {
   rationale_for_batch: string;
 };
 
+function timeAgo(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60000);
+  const hours = Math.floor(diff / 3600000);
+  const days = Math.floor(diff / 86400000);
+  if (mins < 1) return "剛剛";
+  if (mins < 60) return `${mins} 分鐘前`;
+  if (hours < 24) return `${hours} 小時前`;
+  return `${days} 天前`;
+}
+
 export default function RecommendPage() {
   const [directions, setDirections] = useState<string[]>([]);
   const [customDirection, setCustomDirection] = useState("");
@@ -38,6 +49,16 @@ export default function RecommendPage() {
   const [batch, setBatch] = useState<Batch | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [analysisMeta, setAnalysisMeta] = useState<{ created_at: string; book_count: number } | null>(null);
+
+  useEffect(() => {
+    fetch("/api/analysis")
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.created_at) setAnalysisMeta({ created_at: d.created_at, book_count: d.book_count });
+      })
+      .catch(() => {});
+  }, []);
 
   function toggleDirection(d: string) {
     setDirections((prev) =>
@@ -110,7 +131,18 @@ export default function RecommendPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold">下一批推薦</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold">下一批推薦</h1>
+        {analysisMeta ? (
+          <a href="/analysis" className="text-xs text-zinc-400 hover:text-zinc-600 hover:underline">
+            根據 {timeAgo(analysisMeta.created_at)} 的閱讀分析（{analysisMeta.book_count} 本）↗
+          </a>
+        ) : (
+          <a href="/analysis" className="text-xs text-amber-500 hover:underline">
+            ⚠ 尚未分析，推薦準確度較低
+          </a>
+        )}
+      </div>
 
       <section className="space-y-4 p-4 bg-white border border-zinc-200 rounded">
         <div>
@@ -210,8 +242,16 @@ export default function RecommendPage() {
                   <span className="text-zinc-500 text-sm font-normal"> — {b.title_original}</span>
                 )}
               </h3>
-              <div className="text-xs text-zinc-500">
-                {b.author} ({b.author_nationality}) · 阻力：{b.reading_resistance}
+              <div className="text-xs text-zinc-500 flex items-center gap-2 flex-wrap">
+                <span>{b.author} ({b.author_nationality}) · 阻力：{b.reading_resistance}</span>
+                <a
+                  href={`https://search.books.com.tw/search/query/key/${encodeURIComponent(b.title)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-500 hover:underline"
+                >
+                  博客來 ↗
+                </a>
               </div>
             </div>
 
