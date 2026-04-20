@@ -63,6 +63,17 @@ export default function Home() {
     );
   }
 
+  async function setRating(id: string, rating: string | null) {
+    await fetch(`/api/books/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ rating }),
+    });
+    setBooks((prev) =>
+      prev.map((b) => (b.id === id ? { ...b, rating } : b))
+    );
+  }
+
   async function submit() {
     setLoading(true);
     setMessage(null);
@@ -328,24 +339,39 @@ export default function Home() {
                       : "border-zinc-300 hover:border-zinc-500"
                   }`}
                 />
-                <div className={b.exclude_from_analysis ? "text-zinc-400" : ""}>
+                <div className={`min-w-0 ${b.exclude_from_analysis ? "text-zinc-400" : ""}`}>
                   <span className="font-medium">{b.title}</span>
                   {b.author && <span className="text-zinc-500"> — {b.author}</span>}
-                  {b.rating && (
-                    <span className="ml-2 text-xs text-zinc-400">[{b.rating}]</span>
-                  )}
                   {b.exclude_from_analysis && (
                     <span className="ml-2 text-xs text-zinc-400">（排除分析）</span>
                   )}
                 </div>
               </div>
-              <button
-                onClick={() => deleteBook(b.id)}
-                className="ml-3 text-zinc-300 hover:text-red-400 opacity-0 group-hover:opacity-100 transition text-xs shrink-0"
-                title="刪除"
-              >
-                ✕
-              </button>
+              <div className="flex items-center gap-1 shrink-0 ml-2">
+                {(["liked", "neutral", "disliked"] as const).map((r) => {
+                  const emoji = r === "liked" ? "👍" : r === "neutral" ? "😐" : "👎";
+                  const active = b.rating === r;
+                  return (
+                    <button
+                      key={r}
+                      onClick={() => setRating(b.id, active ? null : r)}
+                      title={active ? "點擊取消" : r}
+                      className={`text-sm transition ${
+                        active ? "opacity-100" : "opacity-20 hover:opacity-60"
+                      }`}
+                    >
+                      {emoji}
+                    </button>
+                  );
+                })}
+                <button
+                  onClick={() => deleteBook(b.id)}
+                  className="ml-1 text-zinc-300 hover:text-red-400 opacity-0 group-hover:opacity-100 transition text-xs"
+                  title="刪除"
+                >
+                  ✕
+                </button>
+              </div>
             </li>
           ))}
           {filtered.length === 0 && books.length > 0 && (
