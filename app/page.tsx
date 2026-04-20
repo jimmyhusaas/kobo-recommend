@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
 type Book = {
   id: string;
@@ -10,12 +10,34 @@ type Book = {
   created_at: string;
 };
 
+type OLBook = {
+  ol_key: string;
+  title: string;
+  author: string | null;
+  year: number | null;
+  publisher: string | null;
+  cover_url: string | null;
+};
+
 export default function Home() {
+  const [tab, setTab] = useState<"paste" | "search">("paste");
+
+  // ── paste tab ──
   const [text, setText] = useState("");
-  const [books, setBooks] = useState<Book[]>([]);
-  const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+
+  // ── search tab ──
+  const [query, setQuery] = useState("");
+  const [olBooks, setOlBooks] = useState<OLBook[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [searchMsg, setSearchMsg] = useState<string | null>(null);
+  const [added, setAdded] = useState<Set<string>>(new Set());
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ── book list ──
+  const [books, setBooks] = useState<Book[]>([]);
+  const [listSearch, setListSearch] = useState("");
 
   async function loadBooks() {
     const res = await fetch("/api/books");
@@ -23,9 +45,7 @@ export default function Home() {
     setBooks(data.books || []);
   }
 
-  useEffect(() => {
-    loadBooks();
-  }, []);
+  useEffect(() => { loadBooks(); }, []);
 
   async function deleteBook(id: string) {
     await fetch(`/api/books/${id}`, { method: "DELETE" });
@@ -86,7 +106,49 @@ export default function Home() {
     URL.revokeObjectURL(url);
   }
 
-  const q = search.trim().toLowerCase();
+  // Open Library search (debounced 500ms)
+  function handleQueryChange(v: string) {
+    setQuery(v);
+    setSearchMsg(null);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (!v.trim()) { setOlBooks([]); return; }
+    debounceRef.current = setTimeout(() => runSearch(v.trim()), 500);
+  }
+
+  async function runSearch(q: string) {
+    setSearching(true);
+    setOlBooks([]);
+    try {
+      const res = await fetch(`/api/books/search?q=${encodeURIComponent(q)}`);
+      const data = await res.json();
+      if (data.books) {
+        setOlBooks(data.books);
+        if (data.books.length === 0) setSearchMsg("沒有找到相關書籍");
+      } else {
+        setSearchMsg(data.error ?? "搜尋失敗");
+      }
+    } catch {
+      setSearchMsg("搜尋失敗，請稍後再試");
+    } finally {
+      setSearching(false);
+    }
+  }
+
+  async function addOLBook(book: OLBook) {
+    const line = book.author ? `${book.title} — ${book.author}` : book.title;
+    const res = await fetch("/api/books", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: line }),
+    });
+    const data = await res.json();
+    if (data.inserted !== undefined) {
+      setAdded((prev) => new Set([...prev, book.ol_key]));
+      loadBooks();
+    }
+  }
+
+  const q = listSearch.trim().toLowerCase();
   const filtered = q
     ? books.filter(
         (b) =>
@@ -97,43 +159,144 @@ export default function Home() {
 
   return (
     <div className="space-y-8">
+      {/* ── import section ── */}
       <section>
-        <h1 className="text-2xl font-bold mb-2">匯入書單</h1>
-        <p className="text-sm text-zinc-600 mb-4">
-          一行一本。支援格式：<code className="px-1 bg-zinc-100">書名</code>、
-          <code className="px-1 bg-zinc-100">書名 — 作者</code>、或{" "}
-          <code className="px-1 bg-zinc-100">書名 — 作者 — liked/neutral/disliked</code>
-        </p>
-        <textarea
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          placeholder={`1. 底層邏輯\n2. 原子習慣 — James Clear — liked\n3. 快思慢想 — Daniel Kahneman`}
-          className="w-full h-48 p-3 border border-zinc-300 rounded font-mono text-sm bg-white"
-        />
-        <div className="mt-3 flex items-center gap-3">
-          <button
-            onClick={submit}
-            disabled={loading || !text.trim()}
-            className="px-4 py-2 bg-zinc-900 text-white rounded disabled:opacity-40"
-          >
-            {loading ? "匯入中..." : "匯入"}
-          </button>
-          {message && <span className="text-sm text-zinc-600">{message}</span>}
+        <h1 className="text-2xl font-bold mb-4">匯入書單</h1>
+
+        {/* tab switcher */}
+        <div className="flex border-b border-zinc-200 mb-4">
+          {(["paste", "search"] as const).map((t) => (
+            <button
+              key={t}
+              onClick={() => setTab(t)}
+              className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition ${
+                tab === t
+                  ? "border-zinc-900 text-zinc-900"
+                  : "border-transparent text-zinc-400 hover:text-zinc-600"
+              }`}
+            >
+              {t === "paste" ? "貼上書單" : "搜尋書目"}
+            </button>
+          ))}
         </div>
+
+        {/* paste tab */}
+        {tab === "paste" && (
+          <>
+            <p className="text-sm text-zinc-600 mb-3">
+              一行一本。支援格式：<code className="px-1 bg-zinc-100">書名</code>、
+              <code className="px-1 bg-zinc-100">書名 — 作者</code>、或{" "}
+              <code className="px-1 bg-zinc-100">書名 — 作者 — liked/neutral/disliked</code>
+            </p>
+            <textarea
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              placeholder={`1. 底層邏輯\n2. 原子習慣 — James Clear — liked\n3. 快思慢想 — Daniel Kahneman`}
+              className="w-full h-48 p-3 border border-zinc-300 rounded font-mono text-sm bg-white"
+            />
+            <div className="mt-3 flex items-center gap-3">
+              <button
+                onClick={submit}
+                disabled={loading || !text.trim()}
+                className="px-4 py-2 bg-zinc-900 text-white rounded disabled:opacity-40"
+              >
+                {loading ? "匯入中..." : "匯入"}
+              </button>
+              {message && <span className="text-sm text-zinc-600">{message}</span>}
+            </div>
+          </>
+        )}
+
+        {/* search tab */}
+        {tab === "search" && (
+          <div className="space-y-3">
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={query}
+                onChange={(e) => handleQueryChange(e.target.value)}
+                placeholder="輸入書名或作者…"
+                className="flex-1 px-3 py-2 border border-zinc-300 rounded text-sm bg-white"
+                autoFocus
+              />
+              <button
+                onClick={() => query.trim() && runSearch(query.trim())}
+                disabled={searching || !query.trim()}
+                className="px-4 py-2 bg-zinc-900 text-white rounded text-sm disabled:opacity-40"
+              >
+                {searching ? "搜尋中…" : "搜尋"}
+              </button>
+            </div>
+
+            {searchMsg && !searching && (
+              <p className="text-sm text-zinc-400">{searchMsg}</p>
+            )}
+
+            {olBooks.length > 0 && (
+              <ul className="divide-y divide-zinc-100 bg-white rounded border border-zinc-200">
+                {olBooks.map((b) => {
+                  const isAdded = added.has(b.ol_key);
+                  return (
+                    <li key={b.ol_key} className="flex items-center gap-3 px-3 py-2">
+                      {b.cover_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={b.cover_url}
+                          alt={b.title}
+                          className="w-8 h-12 object-cover rounded shrink-0 bg-zinc-100"
+                        />
+                      ) : (
+                        <div className="w-8 h-12 rounded bg-zinc-100 shrink-0 flex items-center justify-center text-zinc-300 text-xs">
+                          封面
+                        </div>
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium text-sm truncate">{b.title}</div>
+                        <div className="text-xs text-zinc-500 truncate">
+                          {b.author ?? "作者不詳"}
+                          {b.year && <span className="ml-2 text-zinc-400">{b.year}</span>}
+                        </div>
+                        {b.publisher && (
+                          <div className="text-xs text-zinc-400 truncate">{b.publisher}</div>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => addOLBook(b)}
+                        disabled={isAdded}
+                        className={`shrink-0 px-3 py-1 rounded text-xs font-medium transition ${
+                          isAdded
+                            ? "bg-zinc-100 text-zinc-400 cursor-default"
+                            : "bg-zinc-900 text-white hover:bg-zinc-700"
+                        }`}
+                      >
+                        {isAdded ? "已加入" : "+ 加入"}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+        )}
       </section>
 
+      {/* ── book list ── */}
       <section>
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-xl font-semibold">
             已匯入 {books.length} 本
-            {search && <span className="text-base font-normal text-zinc-400 ml-2">（顯示 {filtered.length} 筆）</span>}
+            {listSearch && (
+              <span className="text-base font-normal text-zinc-400 ml-2">
+                （顯示 {filtered.length} 筆）
+              </span>
+            )}
           </h2>
           {books.length > 0 && (
             <div className="flex items-center gap-2">
               <input
                 type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                value={listSearch}
+                onChange={(e) => setListSearch(e.target.value)}
                 placeholder="搜尋書名 / 作者"
                 className="px-3 py-1.5 text-sm border border-zinc-300 rounded w-44"
               />
@@ -149,7 +312,12 @@ export default function Home() {
         </div>
         <ul className="divide-y divide-zinc-100 bg-white rounded border border-zinc-200">
           {filtered.map((b) => (
-            <li key={b.id} className={`px-3 py-2 text-sm flex items-center justify-between group ${b.exclude_from_analysis ? "bg-zinc-50" : ""}`}>
+            <li
+              key={b.id}
+              className={`px-3 py-2 text-sm flex items-center justify-between group ${
+                b.exclude_from_analysis ? "bg-zinc-50" : ""
+              }`}
+            >
               <div className="flex items-center gap-2 min-w-0">
                 <button
                   onClick={() => toggleExclude(b.id, b.exclude_from_analysis)}
@@ -163,7 +331,9 @@ export default function Home() {
                 <div className={b.exclude_from_analysis ? "text-zinc-400" : ""}>
                   <span className="font-medium">{b.title}</span>
                   {b.author && <span className="text-zinc-500"> — {b.author}</span>}
-                  {b.rating && <span className="ml-2 text-xs text-zinc-400">[{b.rating}]</span>}
+                  {b.rating && (
+                    <span className="ml-2 text-xs text-zinc-400">[{b.rating}]</span>
+                  )}
                   {b.exclude_from_analysis && (
                     <span className="ml-2 text-xs text-zinc-400">（排除分析）</span>
                   )}
@@ -179,7 +349,9 @@ export default function Home() {
             </li>
           ))}
           {filtered.length === 0 && books.length > 0 && (
-            <li className="px-3 py-6 text-sm text-zinc-400 text-center">找不到「{search}」</li>
+            <li className="px-3 py-6 text-sm text-zinc-400 text-center">
+              找不到「{listSearch}」
+            </li>
           )}
           {books.length === 0 && (
             <li className="px-3 py-6 text-sm text-zinc-400 text-center">還沒有書</li>
