@@ -17,16 +17,37 @@ export async function DELETE(req: NextRequest) {
   return NextResponse.json({ deleted: id });
 }
 
+const VALID_RATINGS = ["liked", "neutral", "disliked", null];
+
 export async function PATCH(req: NextRequest) {
   const id = req.nextUrl.pathname.split("/").pop()!;
 
-  let body: { exclude_from_analysis?: boolean };
+  let body: { exclude_from_analysis?: boolean; rating?: string | null };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "invalid json" }, { status: 400 });
   }
 
+  // 更新 rating
+  if ("rating" in body) {
+    if (!VALID_RATINGS.includes(body.rating ?? null)) {
+      return NextResponse.json({ error: "invalid rating" }, { status: 400 });
+    }
+    const result = await sql`
+      UPDATE books_read
+      SET rating = ${body.rating ?? null}
+      WHERE id = ${id} AND user_id = ${DEFAULT_USER_ID}
+      RETURNING id, rating
+    ` as unknown as Array<{ id: string; rating: string | null }>;
+
+    if (result.length === 0) {
+      return NextResponse.json({ error: "not found" }, { status: 404 });
+    }
+    return NextResponse.json(result[0]);
+  }
+
+  // 更新 exclude_from_analysis
   if (typeof body.exclude_from_analysis !== "boolean") {
     return NextResponse.json({ error: "exclude_from_analysis (boolean) required" }, { status: 400 });
   }
