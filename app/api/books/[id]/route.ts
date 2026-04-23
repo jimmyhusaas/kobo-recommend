@@ -18,15 +18,34 @@ export async function DELETE(req: NextRequest) {
 }
 
 const VALID_RATINGS = ["liked", "neutral", "disliked", null];
+const VALID_READING_STATUS = ["read", "to_read"];
 
 export async function PATCH(req: NextRequest) {
   const id = req.nextUrl.pathname.split("/").pop()!;
 
-  let body: { exclude_from_analysis?: boolean; rating?: string | null };
+  let body: { exclude_from_analysis?: boolean; rating?: string | null; reading_status?: string };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "invalid json" }, { status: 400 });
+  }
+
+  // 更新 reading_status
+  if ("reading_status" in body) {
+    if (!VALID_READING_STATUS.includes(body.reading_status ?? "")) {
+      return NextResponse.json({ error: "invalid reading_status" }, { status: 400 });
+    }
+    const result = await sql`
+      UPDATE books_read
+      SET reading_status = ${body.reading_status!}
+      WHERE id = ${id} AND user_id = ${DEFAULT_USER_ID}
+      RETURNING id, reading_status
+    ` as unknown as Array<{ id: string; reading_status: string }>;
+
+    if (result.length === 0) {
+      return NextResponse.json({ error: "not found" }, { status: 404 });
+    }
+    return NextResponse.json(result[0]);
   }
 
   // 更新 rating

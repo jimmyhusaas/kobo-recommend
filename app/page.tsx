@@ -7,6 +7,7 @@ type Book = {
   author: string | null;
   rating: string | null;
   exclude_from_analysis: boolean;
+  reading_status: "read" | "to_read";
   created_at: string;
 };
 
@@ -39,6 +40,7 @@ export default function Home() {
   // ── book list ──
   const [books, setBooks] = useState<Book[]>([]);
   const [listSearch, setListSearch] = useState("");
+  const [bookTab, setBookTab] = useState<"read" | "to_read">("read");
 
   async function loadBooks() {
     const res = await fetch("/api/books");
@@ -72,6 +74,17 @@ export default function Home() {
     });
     setBooks((prev) =>
       prev.map((b) => (b.id === id ? { ...b, rating } : b))
+    );
+  }
+
+  async function markAsRead(id: string) {
+    await fetch(`/api/books/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reading_status: "read" }),
+    });
+    setBooks((prev) =>
+      prev.map((b) => (b.id === id ? { ...b, reading_status: "read" } : b))
     );
   }
 
@@ -163,14 +176,17 @@ export default function Home() {
     }
   }
 
+  const readBooks = books.filter((b) => b.reading_status === "read");
+  const toReadBooks = books.filter((b) => b.reading_status === "to_read");
+  const activeBooks = bookTab === "read" ? readBooks : toReadBooks;
   const q = listSearch.trim().toLowerCase();
   const filtered = q
-    ? books.filter(
+    ? activeBooks.filter(
         (b) =>
           b.title.toLowerCase().includes(q) ||
           (b.author?.toLowerCase().includes(q) ?? false)
       )
-    : books;
+    : activeBooks;
 
   return (
     <div className="space-y-8">
@@ -302,31 +318,43 @@ export default function Home() {
 
       {/* ── book list ── */}
       <section>
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-xl font-semibold">
-            已匯入 {books.length} 本
-            {listSearch && (
-              <span className="text-base font-normal text-zinc-400 ml-2">
-                （顯示 {filtered.length} 筆）
-              </span>
-            )}
-          </h2>
-          {books.length > 0 && (
-            <div className="flex items-center gap-2">
+        {/* 已讀 / 待讀 tab */}
+        <div className="flex border-b border-zinc-200 mb-3">
+          {([["read", "已讀", readBooks.length], ["to_read", "待讀", toReadBooks.length]] as const).map(
+            ([tab, label, count]) => (
+              <button
+                key={tab}
+                onClick={() => { setBookTab(tab); setListSearch(""); }}
+                className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition ${
+                  bookTab === tab
+                    ? "border-zinc-900 text-zinc-900"
+                    : "border-transparent text-zinc-400 hover:text-zinc-600"
+                }`}
+              >
+                {label}
+                <span className="ml-1.5 text-xs text-zinc-400">{count}</span>
+              </button>
+            )
+          )}
+          <div className="flex-1" />
+          {activeBooks.length > 0 && (
+            <div className="flex items-center gap-2 pb-1">
               <input
                 type="text"
                 value={listSearch}
                 onChange={(e) => setListSearch(e.target.value)}
                 placeholder="搜尋書名 / 作者"
-                className="px-3 py-1.5 text-sm border border-zinc-300 rounded w-44"
+                className="px-3 py-1 text-sm border border-zinc-300 rounded w-40"
               />
-              <button
-                onClick={exportCSV}
-                className="px-3 py-1.5 text-sm border border-zinc-300 rounded hover:bg-zinc-50 shrink-0"
-                title="匯出 CSV"
-              >
-                ↓ CSV
-              </button>
+              {bookTab === "read" && (
+                <button
+                  onClick={exportCSV}
+                  className="px-3 py-1 text-sm border border-zinc-300 rounded hover:bg-zinc-50 shrink-0"
+                  title="匯出 CSV"
+                >
+                  ↓ CSV
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -335,44 +363,55 @@ export default function Home() {
             <li
               key={b.id}
               className={`px-3 py-2 text-sm flex items-center justify-between group ${
-                b.exclude_from_analysis ? "bg-zinc-50" : ""
+                b.exclude_from_analysis && bookTab === "read" ? "bg-zinc-50" : ""
               }`}
             >
               <div className="flex items-center gap-2 min-w-0">
-                <button
-                  onClick={() => toggleExclude(b.id, b.exclude_from_analysis)}
-                  title={b.exclude_from_analysis ? "目前排除分析，點擊納入" : "點擊排除分析"}
-                  className={`shrink-0 w-4 h-4 rounded border transition ${
-                    b.exclude_from_analysis
-                      ? "bg-zinc-300 border-zinc-300"
-                      : "border-zinc-300 hover:border-zinc-500"
-                  }`}
-                />
-                <div className={`min-w-0 ${b.exclude_from_analysis ? "text-zinc-400" : ""}`}>
+                {bookTab === "read" && (
+                  <button
+                    onClick={() => toggleExclude(b.id, b.exclude_from_analysis)}
+                    title={b.exclude_from_analysis ? "目前排除分析，點擊納入" : "點擊排除分析"}
+                    className={`shrink-0 w-4 h-4 rounded border transition ${
+                      b.exclude_from_analysis
+                        ? "bg-zinc-300 border-zinc-300"
+                        : "border-zinc-300 hover:border-zinc-500"
+                    }`}
+                  />
+                )}
+                <div className={`min-w-0 ${b.exclude_from_analysis && bookTab === "read" ? "text-zinc-400" : ""}`}>
                   <span className="font-medium">{b.title}</span>
                   {b.author && <span className="text-zinc-500"> — {b.author}</span>}
-                  {b.exclude_from_analysis && (
+                  {b.exclude_from_analysis && bookTab === "read" && (
                     <span className="ml-2 text-xs text-zinc-400">（排除分析）</span>
                   )}
                 </div>
               </div>
               <div className="flex items-center gap-1 shrink-0 ml-2">
-                {(["liked", "neutral", "disliked"] as const).map((r) => {
-                  const emoji = r === "liked" ? "👍" : r === "neutral" ? "😐" : "👎";
-                  const active = b.rating === r;
-                  return (
-                    <button
-                      key={r}
-                      onClick={() => setRating(b.id, active ? null : r)}
-                      title={active ? "點擊取消" : r}
-                      className={`text-sm transition ${
-                        active ? "opacity-100" : "opacity-20 hover:opacity-60"
-                      }`}
-                    >
-                      {emoji}
-                    </button>
-                  );
-                })}
+                {bookTab === "to_read" ? (
+                  <button
+                    onClick={() => markAsRead(b.id)}
+                    className="px-2 py-0.5 text-xs rounded border border-green-300 text-green-700 hover:bg-green-50 whitespace-nowrap"
+                  >
+                    讀完了
+                  </button>
+                ) : (
+                  (["liked", "neutral", "disliked"] as const).map((r) => {
+                    const emoji = r === "liked" ? "👍" : r === "neutral" ? "😐" : "👎";
+                    const active = b.rating === r;
+                    return (
+                      <button
+                        key={r}
+                        onClick={() => setRating(b.id, active ? null : r)}
+                        title={active ? "點擊取消" : r}
+                        className={`text-sm transition ${
+                          active ? "opacity-100" : "opacity-20 hover:opacity-60"
+                        }`}
+                      >
+                        {emoji}
+                      </button>
+                    );
+                  })
+                )}
                 <button
                   onClick={() => deleteBook(b.id)}
                   className="ml-1 text-zinc-300 hover:text-red-400 opacity-0 group-hover:opacity-100 transition text-xs"
@@ -383,13 +422,15 @@ export default function Home() {
               </div>
             </li>
           ))}
-          {filtered.length === 0 && books.length > 0 && (
+          {filtered.length === 0 && activeBooks.length > 0 && (
             <li className="px-3 py-6 text-sm text-zinc-400 text-center">
               找不到「{listSearch}」
             </li>
           )}
-          {books.length === 0 && (
-            <li className="px-3 py-6 text-sm text-zinc-400 text-center">還沒有書</li>
+          {activeBooks.length === 0 && (
+            <li className="px-3 py-6 text-sm text-zinc-400 text-center">
+              {bookTab === "to_read" ? "待讀清單是空的，從推薦頁加入想讀的書" : "還沒有書"}
+            </li>
           )}
         </ul>
       </section>
