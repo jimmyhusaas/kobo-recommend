@@ -56,11 +56,15 @@ export async function POST(req: NextRequest) {
   ` as unknown as Array<{ title: string }>;
   const existingTitles = new Set(existing.map((r) => r.title));
 
+  const skippedBooks = books.filter((b) => existingTitles.has(b.title.toLowerCase()));
   const newBooks = books.filter((b) => !existingTitles.has(b.title.toLowerCase()));
-  const skipped = books.length - newBooks.length;
 
   if (newBooks.length === 0) {
-    return NextResponse.json({ inserted: 0, skipped, message: `全部 ${skipped} 本已存在，略過` });
+    return NextResponse.json({
+      inserted: 0,
+      skipped: skippedBooks.length,
+      skipped_titles: skippedBooks.map((b) => b.title),
+    });
   }
 
   const rows = newBooks.map((b) => ({
@@ -77,7 +81,12 @@ export async function POST(req: NextRequest) {
 
   const no_author_count = newBooks.filter((b) => !b.author).length;
 
-  return NextResponse.json({ inserted: inserted.length, skipped, no_author_count });
+  return NextResponse.json({
+    inserted: inserted.length,
+    skipped: skippedBooks.length,
+    skipped_titles: skippedBooks.map((b) => b.title),
+    no_author_count,
+  });
 }
 
 export async function GET() {

@@ -18,6 +18,12 @@ const MODE_LABELS: Record<AnalysisMode, string> = {
   orientation: "閱讀取向",
 };
 
+const MODE_DESCRIPTIONS: Record<AnalysisMode, string> = {
+  gaps: "找出閱讀歷史的空白——哪些重要類別、時代或思想流派你還沒碰到，以及為什麼值得補。",
+  similarity: "找出已讀書目的深層共同主題，以及可以往哪裡延伸，或讀到更根本的原典。",
+  orientation: "分析你是什麼類型的讀者——你關注什麼價值觀、用什麼框架看世界、讀書的底層動機是什麼。",
+};
+
 const BLIND_SPOT_LABELS: Record<AnalysisMode, string> = {
   gaps: "閱讀盲區",
   similarity: "可深化方向",
@@ -40,6 +46,13 @@ type AnalysisMeta = {
   current_book_count: number; // 目前未排除的本數
   total_book_count: number;   // 書單總本數（含排除）
 };
+
+function formatDate(iso: string): string {
+  return new Date(iso).toLocaleString("zh-TW", {
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit",
+  });
+}
 
 function timeAgo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
@@ -148,21 +161,34 @@ export default function AnalysisPage() {
     <div className="space-y-6">
       <div className="space-y-3">
         <h1 className="text-2xl font-bold">閱讀分析</h1>
-        <div className="flex gap-2">
+
+        {/* 模式選擇 tab */}
+        <div className="flex border-b border-zinc-200">
           {(["gaps", "similarity", "orientation"] as AnalysisMode[]).map((m) => (
             <button
               key={m}
-              onClick={() => run(m)}
-              disabled={loading}
-              className={`px-3 py-2 text-sm rounded disabled:opacity-40 transition ${
-                activeMode === m && analysis
-                  ? "bg-zinc-900 text-white"
-                  : "border border-zinc-300 hover:bg-zinc-50 text-zinc-700"
+              onClick={() => setActiveMode(m)}
+              className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition ${
+                activeMode === m
+                  ? "border-zinc-900 text-zinc-900"
+                  : "border-transparent text-zinc-400 hover:text-zinc-600"
               }`}
             >
-              {loading && activeMode === m ? "分析中..." : MODE_LABELS[m]}
+              {MODE_LABELS[m]}
             </button>
           ))}
+        </div>
+
+        {/* 模式簡介 + 開始分析按鈕 */}
+        <div className="flex items-start justify-between gap-4">
+          <p className="text-sm text-zinc-500">{MODE_DESCRIPTIONS[activeMode as AnalysisMode]}</p>
+          <button
+            onClick={() => run(activeMode)}
+            disabled={loading}
+            className="shrink-0 px-3 py-2 text-sm bg-zinc-900 text-white rounded disabled:opacity-40"
+          >
+            {loading ? "分析中..." : "開始分析"}
+          </button>
         </div>
       </div>
 
@@ -192,6 +218,13 @@ export default function AnalysisPage() {
 
       {analysis && (
         <>
+          {/* 分析時間戳 */}
+          {meta?.created_at && (
+            <p className="text-xs text-zinc-400">
+              分析時間：{formatDate(meta.created_at)} · {MODE_LABELS[(analysis.mode ?? "gaps") as AnalysisMode]}模式
+            </p>
+          )}
+
           {/* 無法辨識的書目警告 */}
           {analysis.unrecognized_books && analysis.unrecognized_books.length > 0 && (
             <section className="p-3 bg-amber-50 border border-amber-200 rounded">
