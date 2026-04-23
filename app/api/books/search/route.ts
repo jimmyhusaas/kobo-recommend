@@ -26,7 +26,6 @@ export async function GET(req: NextRequest) {
   url.searchParams.set("q", q);
   url.searchParams.set("maxResults", "10");
   url.searchParams.set("printType", "books");
-  url.searchParams.set("langRestrict", "zh");   // 中文優先
   if (API_KEY) url.searchParams.set("key", API_KEY);
 
   try {
@@ -35,21 +34,7 @@ export async function GET(req: NextRequest) {
     });
     if (!res.ok) throw new Error(`Google Books ${res.status}`);
     const data = await res.json() as { items?: GBVolume[] };
-
-    // 如果中文搜尋沒結果，fallback 不限語言再搜一次
-    let items = data.items ?? [];
-    if (items.length === 0) {
-      const url2 = new URL("https://www.googleapis.com/books/v1/volumes");
-      url2.searchParams.set("q", q);
-      url2.searchParams.set("maxResults", "10");
-      url2.searchParams.set("printType", "books");
-      if (API_KEY) url2.searchParams.set("key", API_KEY);
-      const res2 = await fetch(url2.toString(), { next: { revalidate: 3600 } });
-      if (res2.ok) {
-        const data2 = await res2.json() as { items?: GBVolume[] };
-        items = data2.items ?? [];
-      }
-    }
+    const items = data.items ?? [];
 
     const books = items.map((vol) => {
       const info = vol.volumeInfo;

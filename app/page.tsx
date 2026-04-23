@@ -17,6 +17,7 @@ type OLBook = {
   year: number | null;
   publisher: string | null;
   cover_url: string | null;
+  language: string | null;
 };
 
 export default function Home() {
@@ -89,6 +90,7 @@ export default function Home() {
       const parts = [];
       if (data.inserted > 0) parts.push(`匯入 ${data.inserted} 本`);
       if (data.skipped > 0) parts.push(`${data.skipped} 本已存在略過`);
+      if (data.no_author_count > 0) parts.push(`⚠ ${data.no_author_count} 本未含作者，同名書可能導致推薦誤判`);
       setMessage(parts.join("，") || data.message || "完成");
       loadBooks();
     } else {
@@ -195,8 +197,8 @@ export default function Home() {
         {tab === "paste" && (
           <>
             <p className="text-sm text-zinc-600 mb-3">
-              一行一本。支援格式：<code className="px-1 bg-zinc-100">書名</code>、
-              <code className="px-1 bg-zinc-100">書名 — 作者</code>、或{" "}
+              一行一本。<strong>建議帶作者</strong>（同名書不同作者會影響推薦準確度）。<br />
+              格式：<code className="px-1 bg-zinc-100">書名 — 作者</code> 或{" "}
               <code className="px-1 bg-zinc-100">書名 — 作者 — liked/neutral/disliked</code>
             </p>
             <textarea
@@ -262,7 +264,14 @@ export default function Home() {
                         </div>
                       )}
                       <div className="flex-1 min-w-0">
-                        <div className="font-medium text-sm truncate">{b.title}</div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium text-sm truncate">{b.title}</span>
+                          {b.language && (
+                            <span className="shrink-0 px-1.5 py-0.5 rounded text-xs bg-zinc-100 text-zinc-500">
+                              {b.language === "zh" ? "中文" : b.language === "en" ? "EN" : b.language}
+                            </span>
+                          )}
+                        </div>
                         <div className="text-xs text-zinc-500 truncate">
                           {b.author ?? "作者不詳"}
                           {b.year && <span className="ml-2 text-zinc-400">{b.year}</span>}

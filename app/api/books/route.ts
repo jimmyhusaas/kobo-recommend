@@ -75,7 +75,9 @@ export async function POST(req: NextRequest) {
     RETURNING id
   `;
 
-  return NextResponse.json({ inserted: inserted.length, skipped });
+  const no_author_count = newBooks.filter((b) => !b.author).length;
+
+  return NextResponse.json({ inserted: inserted.length, skipped, no_author_count });
 }
 
 export async function GET() {
