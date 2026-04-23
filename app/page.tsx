@@ -89,9 +89,11 @@ export default function Home() {
       setText("");
       const parts = [];
       if (data.inserted > 0) parts.push(`匯入 ${data.inserted} 本`);
-      if (data.skipped > 0) parts.push(`${data.skipped} 本已存在略過`);
+      if (data.skipped_titles?.length > 0) {
+        parts.push(`略過（已存在）：${data.skipped_titles.join("、")}`);
+      }
       if (data.no_author_count > 0) parts.push(`⚠ ${data.no_author_count} 本未含作者，同名書可能導致推薦誤判`);
-      setMessage(parts.join("，") || data.message || "完成");
+      setMessage(parts.join(" ／ ") || "完成");
       loadBooks();
     } else {
       setMessage(data.error ?? "匯入失敗");
