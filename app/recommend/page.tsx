@@ -125,34 +125,31 @@ export default function RecommendPage() {
     );
   }
 
-  // 想讀：加進書單 + status = in_list
+  // 想讀：加進待讀書單 + status = in_list
   async function addToList(book: RecBook) {
     const text = book.author ? `${book.title} — ${book.author}` : book.title;
     await Promise.all([
       fetch("/api/books", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text }),
+        body: JSON.stringify({ text, reading_status: "to_read" }),
       }),
       patchStatus(book.id, "in_list"),
     ]);
     updateBookStatus(book.id, { status: "in_list" });
   }
 
-  // 讀完：若未在書單先加入，然後 status = read
+  // 讀完：加進已讀書單（若已在待讀，API 會自動升級 status），recommendation status = read
   async function markFinished(book: RecBook) {
-    const ops: Promise<unknown>[] = [patchStatus(book.id, "read")];
-    if (book.status !== "in_list") {
-      const text = book.author ? `${book.title} — ${book.author}` : book.title;
-      ops.push(
-        fetch("/api/books", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text }),
-        })
-      );
-    }
-    await Promise.all(ops);
+    const text = book.author ? `${book.title} — ${book.author}` : book.title;
+    await Promise.all([
+      fetch("/api/books", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, reading_status: "read" }),
+      }),
+      patchStatus(book.id, "read"),
+    ]);
     updateBookStatus(book.id, { status: "read" });
   }
 

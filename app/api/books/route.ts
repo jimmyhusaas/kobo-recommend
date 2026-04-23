@@ -15,9 +15,7 @@ function parseBookList(text: string): ParsedBook[] {
 
   return lines
     .map<ParsedBook | null>((line) => {
-      // Strip leading numbering like "1. " / "1) " / "1、"
       const clean = line.replace(/^\d+[\.\)、]\s*/, "");
-      // Split on em-dash / en-dash / hyphen surrounded by spaces
       const parts = clean.split(/\s+[—–\-]+\s+/);
       const title = parts[0]?.trim();
       if (!title) return null;
@@ -33,7 +31,7 @@ function parseBookList(text: string): ParsedBook[] {
 }
 
 export async function POST(req: NextRequest) {
-  let body: { text?: string };
+  let body: { text?: string; reading_status?: string };
   try {
     body = await req.json();
   } catch {
@@ -45,44 +43,75 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "text required" }, { status: 400 });
   }
 
+  const readingStatus = body.reading_status === "to_read" ? "to_read" : "read";
+
   const books = parseBookList(text);
   if (books.length === 0) {
     return NextResponse.json({ error: "no books parsed" }, { status: 400 });
   }
 
-  // 撈出已有書名（小寫比對，避免大小寫差異造成重複）
+  // 撈出已有書名與其 reading_status
   const existing = await sql`
-    SELECT lower(title) AS title FROM books_read WHERE user_id = ${DEFAULT_USER_ID}
-  ` as unknown as Array<{ title: string }>;
-  const existingTitles = new Set(existing.map((r) => r.title));
+    SELECT lower(title) AS title, reading_status, id
+    FROM books_read WHERE user_id = ${DEFAULT_USER_ID}
+  ` as unknown as Array<{ title: string; reading_status: string; id: string }>;
 
-  const skippedBooks = books.filter((b) => existingTitles.has(b.title.toLowerCase()));
-  const newBooks = books.filter((b) => !existingTitles.has(b.title.toLowerCase()));
+  const existingMap = new Map(existing.map((r) => [r.title, { status: r.reading_status, id: r.id }]));
 
-  if (newBooks.length === 0) {
+  const toInsert: ParsedBook[] = [];
+  const toUpgrade: string[] = []; // id list: to_read → read
+  const skippedBooks: ParsedBook[] = [];
+
+  for (const b of books) {
+    const key = b.title.toLowerCase();
+    const existing = existingMap.get(key);
+    if (!existing) {
+      toInsert.push(b);
+    } else if (existing.status === "to_read" && readingStatus === "read") {
+      // 從待讀升級為已讀
+      toUpgrade.push(existing.id);
+    } else {
+      skippedBooks.push(b);
+    }
+  }
+
+  // 升級 to_read → read
+  if (toUpgrade.length > 0) {
+    await sql`
+      UPDATE books_read
+      SET reading_status = 'read'
+      WHERE id = ANY(${toUpgrade}::uuid[]) AND user_id = ${DEFAULT_USER_ID}
+    `;
+  }
+
+  if (toInsert.length === 0) {
     return NextResponse.json({
       inserted: 0,
+      upgraded: toUpgrade.length,
       skipped: skippedBooks.length,
       skipped_titles: skippedBooks.map((b) => b.title),
+      no_author_count: 0,
     });
   }
 
-  const rows = newBooks.map((b) => ({
+  const rows = toInsert.map((b) => ({
     user_id: DEFAULT_USER_ID,
     title: b.title,
     author: b.author,
     rating: b.rating,
+    reading_status: readingStatus,
   }));
 
   const inserted = await sql`
-    INSERT INTO books_read ${sql(rows, "user_id", "title", "author", "rating")}
+    INSERT INTO books_read ${sql(rows, "user_id", "title", "author", "rating", "reading_status")}
     RETURNING id
   `;
 
-  const no_author_count = newBooks.filter((b) => !b.author).length;
+  const no_author_count = toInsert.filter((b) => !b.author).length;
 
   return NextResponse.json({
     inserted: inserted.length,
+    upgraded: toUpgrade.length,
     skipped: skippedBooks.length,
     skipped_titles: skippedBooks.map((b) => b.title),
     no_author_count,
@@ -91,7 +120,7 @@ export async function POST(req: NextRequest) {
 
 export async function GET() {
   const books = await sql`
-    SELECT id, title, author, rating, exclude_from_analysis, created_at
+    SELECT id, title, author, rating, exclude_from_analysis, reading_status, created_at
     FROM books_read
     WHERE user_id = ${DEFAULT_USER_ID}
     ORDER BY created_at DESC, id DESC

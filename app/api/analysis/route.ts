@@ -17,6 +17,7 @@ export async function POST(req: NextRequest) {
     FROM books_read
     WHERE user_id = ${DEFAULT_USER_ID}
       AND exclude_from_analysis = false
+      AND reading_status = 'read'
     ORDER BY created_at ASC
   ` as unknown as Array<{
     title: string;
@@ -83,6 +84,7 @@ export async function GET() {
       FROM books_read
       WHERE user_id = ${DEFAULT_USER_ID}
         AND exclude_from_analysis = false
+        AND reading_status = 'read'
     `,
     sql`
       SELECT COUNT(*)::int AS count

@@ -60,25 +60,22 @@ export default function HistoryPage() {
       fetch("/api/books", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text }),
+        body: JSON.stringify({ text, reading_status: "to_read" }),
       }),
       patchStatus(book.id, "in_list", batchId),
     ]);
   }
 
   async function markFinished(book: Book, batchId: string) {
-    const ops: Promise<unknown>[] = [patchStatus(book.id, "read", batchId)];
-    if (book.status !== "in_list") {
-      const text = book.author ? `${book.title} — ${book.author}` : book.title;
-      ops.push(
-        fetch("/api/books", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text }),
-        })
-      );
-    }
-    await Promise.all(ops);
+    const text = book.author ? `${book.title} — ${book.author}` : book.title;
+    await Promise.all([
+      fetch("/api/books", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, reading_status: "read" }),
+      }),
+      patchStatus(book.id, "read", batchId),
+    ]);
   }
 
   function toggleBatch(batchId: string) {
