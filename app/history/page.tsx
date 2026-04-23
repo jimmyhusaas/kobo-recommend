@@ -56,23 +56,29 @@ export default function HistoryPage() {
 
   async function addToList(book: Book, batchId: string) {
     const text = book.author ? `${book.title} — ${book.author}` : book.title;
-    await fetch("/api/books", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text }),
-    });
-    setBatches((prev) =>
-      prev.map((b) =>
-        b.batch_id === batchId
-          ? { ...b, books: b.books.map((bk) => (bk.id === book.id ? { ...bk, inList: true } : bk)) }
-          : b
-      )
-    );
+    await Promise.all([
+      fetch("/api/books", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      }),
+      patchStatus(book.id, "in_list", batchId),
+    ]);
   }
 
   async function markFinished(book: Book, batchId: string) {
-    await addToList(book, batchId);
-    await patchStatus(book.id, "read", batchId);
+    const ops: Promise<unknown>[] = [patchStatus(book.id, "read", batchId)];
+    if (book.status !== "in_list") {
+      const text = book.author ? `${book.title} — ${book.author}` : book.title;
+      ops.push(
+        fetch("/api/books", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text }),
+        })
+      );
+    }
+    await Promise.all(ops);
   }
 
   function toggleBatch(batchId: string) {
@@ -110,6 +116,7 @@ export default function HistoryPage() {
       {batches.map((batch, idx) => {
         const isOpen = expanded.has(batch.batch_id);
         const readCount = batch.books.filter((b) => b.status === "read").length;
+        const inListCount = batch.books.filter((b) => b.status === "in_list").length;
 
         return (
           <div key={batch.batch_id} className="border border-zinc-200 rounded bg-white">
@@ -122,7 +129,7 @@ export default function HistoryPage() {
                 <span className="text-zinc-400 text-sm ml-2">{formatDate(batch.created_at)}</span>
               </div>
               <div className="flex items-center gap-3 text-sm text-zinc-500">
-                <span>{readCount}/{batch.books.length} 已讀完</span>
+                <span>{readCount}/{batch.books.length} 已讀完{inListCount > 0 ? ` · ${inListCount} 待讀` : ""}</span>
                 <span>{isOpen ? "▲" : "▼"}</span>
               </div>
             </button>
@@ -153,15 +160,61 @@ export default function HistoryPage() {
                       </div>
 
                       {/* 狀態標籤 */}
-                      <div className="shrink-0 text-right space-y-0.5">
+                      <div className="shrink-0 text-right space-y-1">
                         {book.status === "read" && (
-                          <div className="text-xs text-green-600 font-medium">已讀完 ✓</div>
+                          <>
+                            <div className="text-xs text-green-600 font-medium">✓ 已讀完</div>
+                            <button
+                              onClick={() => patchStatus(book.id, "pending", batch.batch_id)}
+                              className="text-xs text-zinc-300 hover:text-zinc-500"
+                            >
+                              重設
+                            </button>
+                          </>
+                        )}
+                        {book.status === "in_list" && (
+                          <>
+                            <div className="text-xs text-blue-600 font-medium">📚 待讀清單</div>
+                            <button
+                              onClick={() => markFinished(book, batch.batch_id)}
+                              className="px-2 py-0.5 text-xs rounded border border-green-300 text-green-700 hover:bg-green-50 whitespace-nowrap"
+                            >
+                              讀完了
+                            </button>
+                            <button
+                              onClick={() => patchStatus(book.id, "pending", batch.batch_id)}
+                              className="text-xs text-zinc-300 hover:text-zinc-500 block"
+                            >
+                              移除
+                            </button>
+                          </>
                         )}
                         {book.status === "skipped" && (
-                          <div className="text-xs text-zinc-400">已跳過</div>
+                          <>
+                            <div className="text-xs text-zinc-400">跳過</div>
+                            <button
+                              onClick={() => patchStatus(book.id, "pending", batch.batch_id)}
+                              className="text-xs text-zinc-300 hover:text-zinc-500"
+                            >
+                              重設
+                            </button>
+                          </>
                         )}
-                        {(book.inList && book.status !== "read") && (
-                          <div className="text-xs text-blue-500">已加入書單</div>
+                        {(!book.status || book.status === "pending") && (
+                          <>
+                            <button
+                              onClick={() => addToList(book, batch.batch_id)}
+                              className="px-2 py-0.5 text-xs rounded border border-zinc-300 hover:bg-zinc-50 whitespace-nowrap"
+                            >
+                              + 加入書單
+                            </button>
+                            <button
+                              onClick={() => patchStatus(book.id, "skipped", batch.batch_id)}
+                              className="text-xs text-zinc-400 hover:text-zinc-600 block mt-0.5"
+                            >
+                              跳過
+                            </button>
+                          </>
                         )}
                       </div>
                     </div>
@@ -169,44 +222,6 @@ export default function HistoryPage() {
                     {book.rationale?.why_you && (
                       <p className="text-xs text-zinc-500">{book.rationale.why_you}</p>
                     )}
-
-                    {/* 動作按鈕 */}
-                    <div className="flex flex-wrap gap-1 pt-1">
-                      {book.status !== "read" && (
-                        <>
-                          {!book.inList && (
-                            <button
-                              onClick={() => addToList(book, batch.batch_id)}
-                              className="px-2 py-0.5 text-xs rounded border border-zinc-300 hover:bg-zinc-50"
-                            >
-                              + 加入書單
-                            </button>
-                          )}
-                          <button
-                            onClick={() => markFinished(book, batch.batch_id)}
-                            className="px-2 py-0.5 text-xs rounded border border-green-300 text-green-700 hover:bg-green-50"
-                          >
-                            已讀完
-                          </button>
-                          {book.status !== "skipped" && (
-                            <button
-                              onClick={() => patchStatus(book.id, "skipped", batch.batch_id)}
-                              className="px-2 py-0.5 text-xs rounded border border-zinc-300 text-zinc-500 hover:bg-zinc-50"
-                            >
-                              跳過
-                            </button>
-                          )}
-                        </>
-                      )}
-                      {(book.status === "read" || book.status === "skipped") && (
-                        <button
-                          onClick={() => patchStatus(book.id, "pending", batch.batch_id)}
-                          className="px-2 py-0.5 text-xs rounded border border-zinc-300 hover:bg-zinc-100 text-zinc-400"
-                        >
-                          重設
-                        </button>
-                      )}
-                    </div>
                   </li>
                 ))}
               </ul>
