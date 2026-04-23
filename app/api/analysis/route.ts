@@ -1,9 +1,17 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { sql, DEFAULT_USER_ID } from "@/lib/db";
 import { anthropic, MODEL, calcCost } from "@/lib/claude";
 import { ANALYSIS_TOOL, analysisPrompt } from "@/lib/prompts";
 
-export async function POST() {
+type AnalysisMode = "gaps" | "similarity" | "orientation";
+const VALID_MODES: AnalysisMode[] = ["gaps", "similarity", "orientation"];
+
+export async function POST(req: NextRequest) {
+  let mode: AnalysisMode = "gaps";
+  try {
+    const body = await req.json();
+    if (VALID_MODES.includes(body.mode)) mode = body.mode;
+  } catch { /* 沒有 body 也 OK，使用預設 mode */ }
   const books = await sql`
     SELECT title, author, rating, note
     FROM books_read
@@ -29,7 +37,7 @@ export async function POST() {
     max_tokens: 4096,
     tools: [ANALYSIS_TOOL as never],
     tool_choice: { type: "tool", name: ANALYSIS_TOOL.name },
-    messages: [{ role: "user", content: analysisPrompt(books) }],
+    messages: [{ role: "user", content: analysisPrompt(books, mode) }],
   });
 
   const toolBlock = response.content.find((b) => b.type === "tool_use");
@@ -42,6 +50,7 @@ export async function POST() {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const result = toolBlock.input as any;
+  result.mode = mode;
 
   const { input_tokens, output_tokens } = response.usage;
   const costUsd = calcCost(input_tokens, output_tokens);

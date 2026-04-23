@@ -197,9 +197,7 @@ export default function Home() {
         {tab === "paste" && (
           <>
             <p className="text-sm text-zinc-600 mb-3">
-              一行一本。<strong>建議帶作者</strong>（同名書不同作者會影響推薦準確度）。<br />
-              格式：<code className="px-1 bg-zinc-100">書名 — 作者</code> 或{" "}
-              <code className="px-1 bg-zinc-100">書名 — 作者 — liked/neutral/disliked</code>
+              一行一本。<strong>建議帶作者</strong>（同名書不同作者會影響推薦準確度）。格式：<code className="px-1 bg-zinc-100">書名 — 作者</code>
             </p>
             <textarea
               value={text}
