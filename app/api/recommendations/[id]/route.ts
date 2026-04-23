@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sql, DEFAULT_USER_ID } from "@/lib/db";
 
-const ALLOWED = ["pending", "read", "rejected", "skipped"] as const;
+const ALLOWED = ["pending", "in_list", "read", "rejected", "skipped"] as const;
 type Status = (typeof ALLOWED)[number];
 
 function isStatus(s: unknown): s is Status {

@@ -17,11 +17,11 @@ type RecBook = {
   author: string;
   author_nationality: string;
   reading_resistance: string;
+  estimated_read_hours?: number;
   why_you: string;
   core_concepts: string;
   next_book?: string;
   status?: string;
-  inList?: boolean; // 是否已加入書單
 };
 
 type Batch = {
@@ -29,6 +29,12 @@ type Batch = {
   books: RecBook[];
   reading_order: string[];
   rationale_for_batch: string;
+};
+
+type AnalysisMeta = {
+  created_at: string;
+  book_count: number;
+  blind_spots: string[];
 };
 
 function timeAgo(iso: string): string {
@@ -42,6 +48,12 @@ function timeAgo(iso: string): string {
   return `${days} 天前`;
 }
 
+const RESISTANCE_LABEL: Record<string, string> = {
+  low: "易讀",
+  medium: "適中",
+  high: "有挑戰",
+};
+
 export default function RecommendPage() {
   const [directions, setDirections] = useState<string[]>([]);
   const [customDirection, setCustomDirection] = useState("");
@@ -49,13 +61,19 @@ export default function RecommendPage() {
   const [batch, setBatch] = useState<Batch | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [analysisMeta, setAnalysisMeta] = useState<{ created_at: string; book_count: number } | null>(null);
+  const [analysisMeta, setAnalysisMeta] = useState<AnalysisMeta | null>(null);
 
   useEffect(() => {
     fetch("/api/analysis")
       .then((r) => r.json())
       .then((d) => {
-        if (d.created_at) setAnalysisMeta({ created_at: d.created_at, book_count: d.book_count });
+        if (d.created_at) {
+          setAnalysisMeta({
+            created_at: d.created_at,
+            book_count: d.book_count,
+            blind_spots: d.result?.blind_spots ?? [],
+          });
+        }
       })
       .catch(() => {});
   }, []);
@@ -100,33 +118,52 @@ export default function RecommendPage() {
     });
   }
 
+  function updateBookStatus(id: string | undefined, updates: Partial<RecBook>) {
+    if (!id) return;
+    setBatch((b) =>
+      b ? { ...b, books: b.books.map((x) => (x.id === id ? { ...x, ...updates } : x)) } : b
+    );
+  }
+
+  // 想讀：加進書單 + status = in_list
   async function addToList(book: RecBook) {
     const text = book.author ? `${book.title} — ${book.author}` : book.title;
-    await fetch("/api/books", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text }),
-    });
-    setBatch((b) =>
-      b ? { ...b, books: b.books.map((x) => (x.id === book.id ? { ...x, inList: true } : x)) } : b
-    );
+    await Promise.all([
+      fetch("/api/books", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      }),
+      patchStatus(book.id, "in_list"),
+    ]);
+    updateBookStatus(book.id, { status: "in_list" });
   }
 
-  // 已讀完：加進書單 + 更新 status
+  // 讀完：若未在書單先加入，然後 status = read
   async function markFinished(book: RecBook) {
-    await addToList(book);
-    await patchStatus(book.id, "read");
-    setBatch((b) =>
-      b ? { ...b, books: b.books.map((x) => (x.id === book.id ? { ...x, status: "read", inList: true } : x)) } : b
-    );
+    const ops: Promise<unknown>[] = [patchStatus(book.id, "read")];
+    if (book.status !== "in_list") {
+      const text = book.author ? `${book.title} — ${book.author}` : book.title;
+      ops.push(
+        fetch("/api/books", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text }),
+        })
+      );
+    }
+    await Promise.all(ops);
+    updateBookStatus(book.id, { status: "read" });
   }
 
-  // 跳過：只更新 status
   async function markSkipped(book: RecBook) {
     await patchStatus(book.id, "skipped");
-    setBatch((b) =>
-      b ? { ...b, books: b.books.map((x) => (x.id === book.id ? { ...x, status: "skipped" } : x)) } : b
-    );
+    updateBookStatus(book.id, { status: "skipped" });
+  }
+
+  async function resetStatus(book: RecBook) {
+    await patchStatus(book.id, "pending");
+    updateBookStatus(book.id, { status: "pending" });
   }
 
   return (
@@ -145,6 +182,32 @@ export default function RecommendPage() {
       </div>
 
       <section className="space-y-4 p-4 bg-white border border-zinc-200 rounded">
+
+        {/* 來自分析的建議方向 */}
+        {analysisMeta && analysisMeta.blind_spots.length > 0 && (
+          <div>
+            <label className="block text-sm font-medium mb-2">
+              來自閱讀分析的建議
+            </label>
+            <div className="flex flex-wrap gap-2">
+              {analysisMeta.blind_spots.map((spot) => (
+                <button
+                  key={spot}
+                  onClick={() => toggleDirection(spot)}
+                  className={`px-3 py-1 text-xs rounded border transition ${
+                    directions.includes(spot)
+                      ? "bg-zinc-900 text-white border-zinc-900"
+                      : "border-amber-300 text-amber-700 hover:border-amber-500 hover:bg-amber-50"
+                  }`}
+                >
+                  {spot}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* 預設方向選項 */}
         <div>
           <label className="block text-sm font-medium mb-2">
             方向（可複選，建議最多 2 個）
@@ -166,6 +229,7 @@ export default function RecommendPage() {
           </div>
         </div>
 
+        {/* 自訂方向 */}
         <div>
           <label className="block text-sm font-medium mb-2">自訂方向</label>
           <div className="flex gap-2">
@@ -187,6 +251,7 @@ export default function RecommendPage() {
           </div>
         </div>
 
+        {/* 已選方向 */}
         {directions.length > 0 && (
           <div className="flex flex-wrap gap-2">
             {directions.map((d) => (
@@ -198,25 +263,26 @@ export default function RecommendPage() {
           </div>
         )}
 
-        <div>
-          <label className="block text-sm font-medium mb-2">數量</label>
-          <input
-            type="number"
-            min={1}
-            max={10}
-            value={count}
-            onChange={(e) => setCount(Number(e.target.value))}
-            className="w-20 p-2 border border-zinc-300 rounded"
-          />
+        <div className="flex items-center gap-4">
+          <div>
+            <label className="block text-sm font-medium mb-1">數量</label>
+            <input
+              type="number"
+              min={1}
+              max={10}
+              value={count}
+              onChange={(e) => setCount(Number(e.target.value))}
+              className="w-20 p-2 border border-zinc-300 rounded"
+            />
+          </div>
+          <button
+            onClick={run}
+            disabled={loading || directions.length === 0}
+            className="mt-5 px-4 py-2 bg-zinc-900 text-white rounded disabled:opacity-40"
+          >
+            {loading ? "生成中..." : "產出推薦"}
+          </button>
         </div>
-
-        <button
-          onClick={run}
-          disabled={loading || directions.length === 0}
-          className="px-4 py-2 bg-zinc-900 text-white rounded disabled:opacity-40"
-        >
-          {loading ? "生成中..." : "產出推薦"}
-        </button>
       </section>
 
       {error && (
@@ -233,17 +299,25 @@ export default function RecommendPage() {
       )}
 
       {batch?.books.map((b, i) => (
-        <article key={b.id ?? i} className="p-4 bg-white border border-zinc-200 rounded space-y-2">
+        <article key={b.id ?? i} className="p-4 bg-white border border-zinc-200 rounded space-y-3">
           <div className="flex items-start justify-between gap-3">
-            <div>
+            <div className="min-w-0">
               <h3 className="font-semibold">
                 {i + 1}. 《{b.title}》
                 {b.title_original && (
                   <span className="text-zinc-500 text-sm font-normal"> — {b.title_original}</span>
                 )}
               </h3>
-              <div className="text-xs text-zinc-500 flex items-center gap-2 flex-wrap">
-                <span>{b.author} ({b.author_nationality}) · 阻力：{b.reading_resistance}</span>
+              <div className="text-xs text-zinc-500 flex items-center gap-2 flex-wrap mt-0.5">
+                <span>{b.author} ({b.author_nationality})</span>
+                <span className="text-zinc-300">·</span>
+                <span>閱讀阻力：{RESISTANCE_LABEL[b.reading_resistance] ?? b.reading_resistance}</span>
+                {b.estimated_read_hours && (
+                  <>
+                    <span className="text-zinc-300">·</span>
+                    <span>約 {b.estimated_read_hours} 小時</span>
+                  </>
+                )}
                 <a
                   href={`https://search.books.com.tw/search/query/key/${encodeURIComponent(b.title)}`}
                   target="_blank"
@@ -255,30 +329,56 @@ export default function RecommendPage() {
               </div>
             </div>
 
-            {/* 三個動作按鈕 */}
-            <div className="flex flex-col gap-1 shrink-0 items-end">
+            {/* 狀態動作區 */}
+            <div className="shrink-0 flex flex-col items-end gap-1">
               {b.status === "read" ? (
-                <span className="text-xs text-green-600 font-medium">已讀完 ✓</span>
-              ) : b.status === "skipped" ? (
-                <span className="text-xs text-zinc-400">已跳過</span>
-              ) : (
                 <>
+                  <span className="text-xs text-green-600 font-medium">✓ 已讀完</span>
                   <button
-                    onClick={() => addToList(b)}
-                    disabled={b.inList}
-                    className="px-2 py-1 text-xs rounded border border-zinc-300 hover:bg-zinc-50 disabled:opacity-50 disabled:cursor-default whitespace-nowrap"
+                    onClick={() => resetStatus(b)}
+                    className="text-xs text-zinc-300 hover:text-zinc-500"
                   >
-                    {b.inList ? "已加入書單 ✓" : "+ 加入書單"}
+                    重設
                   </button>
+                </>
+              ) : b.status === "in_list" ? (
+                <>
+                  <span className="text-xs text-blue-600 font-medium">📚 已加入書單</span>
                   <button
                     onClick={() => markFinished(b)}
                     className="px-2 py-1 text-xs rounded border border-green-300 text-green-700 hover:bg-green-50 whitespace-nowrap"
                   >
-                    已讀完
+                    讀完了
+                  </button>
+                  <button
+                    onClick={() => resetStatus(b)}
+                    className="text-xs text-zinc-300 hover:text-zinc-500"
+                  >
+                    移除
+                  </button>
+                </>
+              ) : b.status === "skipped" ? (
+                <>
+                  <span className="text-xs text-zinc-400">跳過</span>
+                  <button
+                    onClick={() => resetStatus(b)}
+                    className="text-xs text-zinc-300 hover:text-zinc-500"
+                  >
+                    重設
+                  </button>
+                </>
+              ) : (
+                // pending
+                <>
+                  <button
+                    onClick={() => addToList(b)}
+                    className="px-2 py-1 text-xs rounded border border-zinc-300 hover:bg-zinc-50 whitespace-nowrap"
+                  >
+                    + 加入書單
                   </button>
                   <button
                     onClick={() => markSkipped(b)}
-                    className="px-2 py-1 text-xs rounded border border-zinc-300 text-zinc-500 hover:bg-zinc-50 whitespace-nowrap"
+                    className="text-xs text-zinc-400 hover:text-zinc-600"
                   >
                     跳過
                   </button>
@@ -288,13 +388,15 @@ export default function RecommendPage() {
           </div>
 
           <div className="text-sm">
-            <span className="font-medium">為什麼是你：</span>{b.why_you}
+            <span className="font-medium text-zinc-700">為什麼是你：</span>
+            <span className="text-zinc-600">{b.why_you}</span>
           </div>
           <div className="text-sm">
-            <span className="font-medium">核心概念：</span>{b.core_concepts}
+            <span className="font-medium text-zinc-700">讀完得到：</span>
+            <span className="text-zinc-600">{b.core_concepts}</span>
           </div>
           {b.next_book && (
-            <div className="text-xs text-zinc-500">讀完下一步：{b.next_book}</div>
+            <div className="text-xs text-zinc-400">讀完下一步：{b.next_book}</div>
           )}
         </article>
       ))}
