@@ -7,7 +7,19 @@ export const ANALYSIS_TOOL = {
   input_schema: {
     type: "object" as const,
     properties: {
-      total_books: { type: "number" },
+      unrecognized_books: {
+        type: "array",
+        description: "無法確認存在的書（打錯字、書名過於模糊、或明顯不是真實書籍的輸入）",
+        items: {
+          type: "object",
+          properties: {
+            input: { type: "string", description: "使用者輸入的原始書名" },
+            note: { type: "string", description: "無法確認的原因，或最接近的可能書目" },
+          },
+          required: ["input", "note"],
+        },
+      },
+      total_books: { type: "number", description: "可確認的書籍數量（不含 unrecognized_books）" },
       categories: {
         type: "array",
         description: "5-8 個有意義的主題分類",
@@ -33,7 +45,7 @@ export const ANALYSIS_TOOL = {
       },
       blind_spots: {
         type: "array",
-        description: "3-6 個明顯的閱讀盲區",
+        description: "3-6 個項目，內容依分析模式而定",
         items: { type: "string" },
       },
       sharp_observation: {
@@ -42,6 +54,7 @@ export const ANALYSIS_TOOL = {
       },
     },
     required: [
+      "unrecognized_books",
       "total_books",
       "categories",
       "patterns",
@@ -137,17 +150,52 @@ function formatBookList(books: Book[]): string {
     .join("\n");
 }
 
-export function analysisPrompt(books: Book[]): string {
+type AnalysisMode = "gaps" | "similarity" | "orientation";
+
+const MODE_INSTRUCTIONS: Record<AnalysisMode, { label: string; instructions: string }> = {
+  gaps: {
+    label: "補強建議",
+    instructions: `分析重點：閱讀歷史中缺少什麼。
+- categories：正常歸類，找出過量或偏食的主題
+- patterns：找出結構性的閱讀偏食（例如「X 本執行類，0 本策略類」）
+- blind_spots：列出 3-6 個重要但完全沒讀到的類別、時代、或思想流派，說明為何重要
+- sharp_observation：最需要補強的一件事`,
+  },
+  similarity: {
+    label: "相似深化",
+    instructions: `分析重點：已讀書目的深層共同主題，以及可以往哪裡延伸。
+- categories：按「核心問題」而非書籍類型歸類，說明每個群組在追問什麼
+- patterns：找出跨類別的重複主題或問題意識
+- blind_spots：這些主題的「下一層」——如果想更深入，哪些原典或更嚴格的版本還沒讀到
+- sharp_observation：這批書圍繞的核心問題是什麼`,
+  },
+  orientation: {
+    label: "閱讀取向",
+    instructions: `分析重點：這個讀者是什麼類型的人。
+- categories：按「關注的核心問題」歸類，而非書籍類型
+- patterns：找出跨類別的深層動機或價值觀一致性
+- blind_spots：這個閱讀取向完全沒有觸碰的思維框架或價值觀
+- sharp_observation：一句話說出這個讀者在追求什麼`,
+  },
+};
+
+export function analysisPrompt(books: Book[], mode: AnalysisMode = "gaps"): string {
+  const modeInstructions = MODE_INSTRUCTIONS[mode].instructions;
+
   return `你是一位思考清晰、直言不諱的書籍推薦顧問。使用者已讀過以下書籍，請進行結構化分析：
 
 ${formatBookList(books)}
 
-任務：
-1. 把書歸類到 5-8 個有意義的主題（反映使用者實際的興趣走向，不要只貼標籤）
-2. 每個類別給本數、百分比（相對於總數）、代表書名
-3. 找出 3-6 個交叉觀察——非顯而易見的模式（例如「0 本小說但 X 本生產力書」這種結構性觀察）
-4. 找出 3-6 個明顯的閱讀盲區
-5. 給一個直接、可能刺耳但值得說的觀察（避免空話、避免讚美）
+第一步：過濾書單
+先找出你無法確認存在的書（打錯字、書名過度模糊、或明顯不是真實書籍的輸入），放入 unrecognized_books 並說明原因。後續分析只基於可確認的書。
+
+第二步：${MODE_INSTRUCTIONS[mode].label}分析
+${modeInstructions}
+
+通用原則：
+- 分類要反映使用者實際的興趣走向，不要只貼流派標籤
+- 每個類別給本數、百分比（相對可確認總數）、代表書名
+- 避免空話與讚美
 
 使用繁體中文。用 report_analysis 工具回傳結果。`;
 }

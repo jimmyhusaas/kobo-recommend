@@ -8,12 +8,30 @@ type Category = {
   books: string[];
 };
 
+type UnrecognizedBook = { input: string; note: string };
+
+type AnalysisMode = "gaps" | "similarity" | "orientation";
+
+const MODE_LABELS: Record<AnalysisMode, string> = {
+  gaps: "補強建議",
+  similarity: "相似深化",
+  orientation: "閱讀取向",
+};
+
+const BLIND_SPOT_LABELS: Record<AnalysisMode, string> = {
+  gaps: "閱讀盲區",
+  similarity: "可深化方向",
+  orientation: "未觸及的視角",
+};
+
 type AnalysisResult = {
   total_books: number;
   categories: Category[];
   patterns: string[];
   blind_spots: string[];
   sharp_observation: string;
+  unrecognized_books?: UnrecognizedBook[];
+  mode?: AnalysisMode;
 };
 
 type AnalysisMeta = {
@@ -85,6 +103,7 @@ export default function AnalysisPage() {
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [meta, setMeta] = useState<AnalysisMeta | null>(null);
   const [loading, setLoading] = useState(false);
+  const [activeMode, setActiveMode] = useState<AnalysisMode>("gaps");
   const [error, setError] = useState<string | null>(null);
 
   async function loadLatest() {
@@ -92,6 +111,7 @@ export default function AnalysisPage() {
     const data = await res.json();
     if (data.result) {
       setAnalysis(data.result);
+      if (data.result.mode) setActiveMode(data.result.mode);
       setMeta({
         created_at: data.created_at,
         book_count: data.book_count,
@@ -105,15 +125,19 @@ export default function AnalysisPage() {
     loadLatest();
   }, []);
 
-  async function run() {
+  async function run(mode: AnalysisMode = activeMode) {
+    setActiveMode(mode);
     setLoading(true);
     setError(null);
-    const res = await fetch("/api/analysis", { method: "POST" });
+    const res = await fetch("/api/analysis", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode }),
+    });
     const data = await res.json();
     setLoading(false);
     if (res.ok) {
       setAnalysis(data);
-      // 重新分析後重新拉 meta
       loadLatest();
     } else {
       setError(data.error ?? "分析失敗");
@@ -122,21 +146,30 @@ export default function AnalysisPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">閱讀類型拆解</h1>
-        <button
-          onClick={run}
-          disabled={loading}
-          className="px-3 py-2 text-sm bg-zinc-900 text-white rounded disabled:opacity-40"
-        >
-          {loading ? "分析中..." : analysis ? "重新分析" : "開始分析"}
-        </button>
+      <div className="space-y-3">
+        <h1 className="text-2xl font-bold">閱讀分析</h1>
+        <div className="flex gap-2">
+          {(["gaps", "similarity", "orientation"] as AnalysisMode[]).map((m) => (
+            <button
+              key={m}
+              onClick={() => run(m)}
+              disabled={loading}
+              className={`px-3 py-2 text-sm rounded disabled:opacity-40 transition ${
+                activeMode === m && analysis
+                  ? "bg-zinc-900 text-white"
+                  : "border border-zinc-300 hover:bg-zinc-50 text-zinc-700"
+              }`}
+            >
+              {loading && activeMode === m ? "分析中..." : MODE_LABELS[m]}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* 書單變動提示 */}
       {meta && !loading && (
         <>
-          <StatusBanner meta={meta} onRerun={run} />
+          <StatusBanner meta={meta} onRerun={() => run(activeMode)} />
           {meta.total_book_count > meta.current_book_count && (
             <p className="text-xs text-zinc-400">
               書單共 {meta.total_book_count} 本，已排除 {meta.total_book_count - meta.current_book_count} 本，本次分析納入 {meta.current_book_count} 本
@@ -159,6 +192,23 @@ export default function AnalysisPage() {
 
       {analysis && (
         <>
+          {/* 無法辨識的書目警告 */}
+          {analysis.unrecognized_books && analysis.unrecognized_books.length > 0 && (
+            <section className="p-3 bg-amber-50 border border-amber-200 rounded">
+              <h2 className="text-sm font-semibold text-amber-800 mb-2">
+                ⚠ {analysis.unrecognized_books.length} 本書無法確認（已排除在分析外）
+              </h2>
+              <ul className="space-y-1">
+                {analysis.unrecognized_books.map((b, i) => (
+                  <li key={i} className="text-xs text-amber-700">
+                    <span className="font-medium">{b.input}</span>
+                    <span className="text-amber-500 ml-2">— {b.note}</span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
           <section>
             <h2 className="text-lg font-semibold mb-3">
               閱讀輪廓（{analysis.total_books} 本）
@@ -193,7 +243,9 @@ export default function AnalysisPage() {
           </section>
 
           <section>
-            <h2 className="text-lg font-semibold mb-2">閱讀盲區</h2>
+            <h2 className="text-lg font-semibold mb-2">
+              {BLIND_SPOT_LABELS[(analysis.mode ?? "gaps") as AnalysisMode]}
+            </h2>
             <ul className="list-disc pl-5 space-y-1 text-sm">
               {analysis.blind_spots.map((p, i) => <li key={i}>{p}</li>)}
             </ul>
