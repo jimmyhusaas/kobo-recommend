@@ -18,6 +18,7 @@ type RecommendedBook = {
   why_you: string;
   core_concepts: string;
   next_book?: string;
+  estimated_read_hours?: number;
 };
 
 export async function GET() {
@@ -86,9 +87,16 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const previousRows = (await sql`
-    SELECT title FROM recommendations WHERE user_id = ${DEFAULT_USER_ID}
-  `) as unknown as Array<{ title: string }>;
+  const [previousRows, latestAnalysis] = await Promise.all([
+    sql`SELECT title FROM recommendations WHERE user_id = ${DEFAULT_USER_ID}` as unknown as Promise<Array<{ title: string }>>,
+    sql`SELECT result FROM analyses WHERE user_id = ${DEFAULT_USER_ID} ORDER BY created_at DESC LIMIT 1` as unknown as Promise<Array<{ result: Record<string, unknown> }>>,
+  ]);
+
+  const analysis = latestAnalysis[0]?.result as {
+    blind_spots?: string[];
+    patterns?: string[];
+    sharp_observation?: string;
+  } | undefined;
 
   const prefs = user?.preferences ?? {};
   const prompt = recommendPrompt({
@@ -98,6 +106,7 @@ export async function POST(req: NextRequest) {
     excludedCountries: prefs.exclude_countries ?? [],
     excludedLanguages: prefs.exclude_languages ?? [],
     previousRecommendations: previousRows.map((r) => r.title),
+    analysis,
   });
 
   const response = await anthropic.messages.create({
@@ -136,6 +145,7 @@ export async function POST(req: NextRequest) {
       title_original: b.title_original,
       author_nationality: b.author_nationality,
       reading_resistance: b.reading_resistance,
+      estimated_read_hours: b.estimated_read_hours,
     }),
   }));
 

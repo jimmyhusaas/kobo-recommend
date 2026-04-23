@@ -84,11 +84,15 @@ export const RECOMMEND_TOOL = {
             why_you: {
               type: "string",
               description:
-                "為什麼推給這個特定用戶——2-3 句，明確連結到他讀過的書或從書單推斷出的傾向",
+                "說服性論述（不是觀察，是論點）：1) 點名這本書對應哪個閱讀盲區，2) 用讀者已讀書目中的具體書名做對照，說清楚為什麼那個盲區重要（例如：你讀了 X 本強調執行面，但缺少 Y 這個視角），3) 讀完後會對過去讀過的哪些書產生新的理解或連結",
             },
             core_concepts: {
               type: "string",
-              description: "核心概念 / 會學到什麼",
+              description: "核心概念 / 讀完具體會得到什麼能力或視角（避免「很有價值」這類空話）",
+            },
+            estimated_read_hours: {
+              type: "number",
+              description: "預估閱讀時間（小時），作為時間投資參考",
             },
             next_book: {
               type: "string",
@@ -148,6 +152,12 @@ ${formatBookList(books)}
 使用繁體中文。用 report_analysis 工具回傳結果。`;
 }
 
+type Analysis = {
+  blind_spots?: string[];
+  patterns?: string[];
+  sharp_observation?: string;
+};
+
 export function recommendPrompt(opts: {
   books: Book[];
   directions: string[];
@@ -155,6 +165,7 @@ export function recommendPrompt(opts: {
   excludedCountries: string[];
   excludedLanguages: string[];
   previousRecommendations?: string[];
+  analysis?: Analysis;
 }): string {
   const previous = opts.previousRecommendations?.length
     ? `\n\n已推薦過（不要重複）：\n${opts.previousRecommendations
@@ -162,10 +173,21 @@ export function recommendPrompt(opts: {
         .join("\n")}`
     : "";
 
-  return `你是使用者的長期書籍推薦顧問。任務：基於下面的已讀書單、指定方向、硬性過濾條件，推薦 ${opts.count} 本書。
+  const analysisContext = opts.analysis
+    ? `\n\n先前分析診斷（直接引用這些結果來決定推薦方向與 why_you 的論點）：
+閱讀盲區：
+${(opts.analysis.blind_spots ?? []).map((s) => `- ${s}`).join("\n")}
+
+交叉觀察：
+${(opts.analysis.patterns ?? []).map((s) => `- ${s}`).join("\n")}
+
+直接評語：${opts.analysis.sharp_observation ?? "無"}`
+    : "";
+
+  return `你是使用者的長期書籍推薦顧問。任務：基於下面的已讀書單、先前分析診斷、指定方向、硬性過濾條件，推薦 ${opts.count} 本書。
 
 已讀書單：
-${formatBookList(opts.books)}
+${formatBookList(opts.books)}${analysisContext}
 
 指定方向：${opts.directions.join("、")}
 
@@ -174,10 +196,10 @@ ${formatBookList(opts.books)}
 - 排除語言版本：${opts.excludedLanguages.join("、") || "無"}（原文版或繁體中文版 OK）${previous}
 
 推薦原則：
-- 每本書必須有強烈的「為什麼是這個人」連結，對應他讀過的書或從書單推斷出的傾向
+- why_you 必須是說服性論述，不是觀察。直接點名對應哪個盲區，用讀者已讀書目中的具體書名做對照，說清楚讀完後會對過去讀的哪些書產生新連結
 - 避開已過量的主題（例如讀過 10+ 本生產力書就不要再推生產力書）
 - 若他讀過多本某主題的衍生書，優先推該主題的原典
-- 每本標示閱讀阻力（low/medium/high）
+- 每本標示閱讀阻力（low/medium/high）與預估閱讀時間（小時）
 - 給建議閱讀順序，並解釋這批書的整體配比邏輯
 
 使用繁體中文。用 recommend_books 工具回傳結果。`;
