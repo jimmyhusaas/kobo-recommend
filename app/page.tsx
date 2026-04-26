@@ -40,7 +40,7 @@ export default function Home() {
   const [olBooks, setOlBooks] = useState<OLBook[]>([]);
   const [searching, setSearching] = useState(false);
   const [searchMsg, setSearchMsg] = useState<string | null>(null);
-  const [added, setAdded] = useState<Set<string>>(new Set());
+  const [added, setAdded] = useState<Map<string, "read" | "to_read">>(new Map());
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ── book list ──
@@ -191,16 +191,16 @@ export default function Home() {
     }
   }
 
-  async function addOLBook(book: OLBook) {
+  async function addOLBook(book: OLBook, reading_status: "read" | "to_read") {
     const line = book.author ? `${book.title} — ${book.author}` : book.title;
     const res = await fetch("/api/books", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text: line }),
+      body: JSON.stringify({ text: line, reading_status }),
     });
     const data = await res.json();
-    if (data.inserted !== undefined) {
-      setAdded((prev) => new Set([...prev, book.ol_key]));
+    if (data.inserted !== undefined || data.upgraded !== undefined) {
+      setAdded((prev) => new Map([...prev, [book.ol_key, reading_status]]));
       loadBooks();
     }
   }
@@ -341,7 +341,7 @@ export default function Home() {
             {olBooks.length > 0 && (
               <ul className="divide-y divide-zinc-100 bg-white rounded border border-zinc-200">
                 {olBooks.map((b) => {
-                  const isAdded = added.has(b.ol_key);
+                  const addedStatus = added.get(b.ol_key);
                   return (
                     <li key={b.ol_key} className="flex items-center gap-3 px-3 py-2">
                       {b.cover_url ? (
@@ -373,17 +373,26 @@ export default function Home() {
                           <div className="text-xs text-zinc-400 truncate">{b.publisher}</div>
                         )}
                       </div>
-                      <button
-                        onClick={() => addOLBook(b)}
-                        disabled={isAdded}
-                        className={`shrink-0 px-3 py-1 rounded text-xs font-medium transition ${
-                          isAdded
-                            ? "bg-zinc-100 text-zinc-400 cursor-default"
-                            : "bg-zinc-900 text-white hover:bg-zinc-700"
-                        }`}
-                      >
-                        {isAdded ? "已加入" : "+ 加入"}
-                      </button>
+                      {addedStatus ? (
+                        <span className="shrink-0 px-3 py-1 rounded text-xs font-medium bg-zinc-100 text-zinc-400">
+                          {addedStatus === "read" ? "✓ 已讀" : "✓ 待讀"}
+                        </span>
+                      ) : (
+                        <div className="shrink-0 flex flex-col gap-1">
+                          <button
+                            onClick={() => addOLBook(b, "read")}
+                            className="px-2 py-0.5 rounded text-xs font-medium bg-zinc-900 text-white hover:bg-zinc-700 whitespace-nowrap"
+                          >
+                            + 已讀
+                          </button>
+                          <button
+                            onClick={() => addOLBook(b, "to_read")}
+                            className="px-2 py-0.5 rounded text-xs font-medium border border-zinc-300 hover:bg-zinc-50 whitespace-nowrap"
+                          >
+                            + 待讀
+                          </button>
+                        </div>
+                      )}
                     </li>
                   );
                 })}
