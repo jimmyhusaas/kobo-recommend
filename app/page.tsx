@@ -22,12 +22,18 @@ type OLBook = {
 };
 
 export default function Home() {
-  const [tab, setTab] = useState<"paste" | "search">("paste");
+  const [tab, setTab] = useState<"paste" | "search" | "csv">("paste");
 
   // ── paste tab ──
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+
+  // ── csv tab ──
+  const [csvFile, setCsvFile] = useState<File | null>(null);
+  const [csvLoading, setCsvLoading] = useState(false);
+  const [csvMessage, setCsvMessage] = useState<string | null>(null);
+  const csvInputRef = useRef<HTMLInputElement | null>(null);
 
   // ── search tab ──
   const [query, setQuery] = useState("");
@@ -110,6 +116,29 @@ export default function Home() {
       loadBooks();
     } else {
       setMessage(data.error ?? "匯入失敗");
+    }
+  }
+
+  async function importCSV() {
+    if (!csvFile) return;
+    setCsvLoading(true);
+    setCsvMessage(null);
+    const form = new FormData();
+    form.append("file", csvFile);
+    const res = await fetch("/api/books/import", { method: "POST", body: form });
+    const data = await res.json();
+    setCsvLoading(false);
+    if (res.ok) {
+      const parts = [];
+      if (data.inserted > 0) parts.push(`匯入 ${data.inserted} 本`);
+      if (data.upgraded > 0) parts.push(`升級 ${data.upgraded} 本（待讀→已讀）`);
+      if (data.skipped > 0) parts.push(`略過 ${data.skipped} 本（已存在）`);
+      setCsvMessage(parts.join(" ／ ") || "完成（無新書）");
+      setCsvFile(null);
+      if (csvInputRef.current) csvInputRef.current.value = "";
+      loadBooks();
+    } else {
+      setCsvMessage(`錯誤：${data.error ?? "匯入失敗"}`);
     }
   }
 
@@ -196,7 +225,7 @@ export default function Home() {
 
         {/* tab switcher */}
         <div className="flex border-b border-zinc-200 mb-4">
-          {(["paste", "search"] as const).map((t) => (
+          {(["paste", "search", "csv"] as const).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
@@ -206,7 +235,7 @@ export default function Home() {
                   : "border-transparent text-zinc-400 hover:text-zinc-600"
               }`}
             >
-              {t === "paste" ? "貼上書單" : "搜尋書目"}
+              {t === "paste" ? "貼上書單" : t === "search" ? "搜尋書目" : "Goodreads CSV"}
             </button>
           ))}
         </div>
@@ -234,6 +263,54 @@ export default function Home() {
               {message && <span className="text-sm text-zinc-600">{message}</span>}
             </div>
           </>
+        )}
+
+        {/* csv tab */}
+        {tab === "csv" && (
+          <div className="space-y-4">
+            <div className="text-sm text-zinc-600 space-y-1">
+              <p>從 Goodreads 匯出 CSV 後直接上傳。會自動對應書架：</p>
+              <ul className="list-disc pl-5 text-zinc-500 space-y-0.5">
+                <li><strong>read</strong> shelf → 已讀</li>
+                <li><strong>to-read / currently-reading</strong> shelf → 待讀</li>
+                <li>評分 ★★★★☆ 以上 → 👍，★★★ → 😐，★★ 以下 → 👎</li>
+              </ul>
+              <p className="text-zinc-400 text-xs">匯出方式：Goodreads → My Books → Import and Export → Export Library</p>
+            </div>
+            <div className="flex items-center gap-3">
+              <label className="px-4 py-2 text-sm border border-zinc-300 rounded cursor-pointer hover:bg-zinc-50 shrink-0">
+                選擇 CSV 檔案
+                <input
+                  ref={csvInputRef}
+                  type="file"
+                  accept=".csv,text/csv"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0] ?? null;
+                    setCsvFile(f);
+                    setCsvMessage(null);
+                  }}
+                />
+              </label>
+              {csvFile && (
+                <span className="text-sm text-zinc-500 truncate min-w-0">{csvFile.name}</span>
+              )}
+            </div>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={importCSV}
+                disabled={!csvFile || csvLoading}
+                className="px-4 py-2 bg-zinc-900 text-white rounded text-sm disabled:opacity-40"
+              >
+                {csvLoading ? "匯入中..." : "匯入"}
+              </button>
+              {csvMessage && (
+                <span className={`text-sm ${csvMessage.startsWith("錯誤") ? "text-red-600" : "text-zinc-600"}`}>
+                  {csvMessage}
+                </span>
+              )}
+            </div>
+          </div>
         )}
 
         {/* search tab */}
