@@ -50,12 +50,14 @@ export default function RecommendPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [analysisMeta, setAnalysisMeta] = useState<{ created_at: string; book_count: number } | null>(null);
+  const [bookCount, setBookCount] = useState<number | null>(null);
 
   useEffect(() => {
     fetch("/api/analysis")
       .then((r) => r.json())
       .then((d) => {
         if (d.created_at) setAnalysisMeta({ created_at: d.created_at, book_count: d.book_count });
+        if (typeof d.current_book_count === "number") setBookCount(d.current_book_count);
       })
       .catch(() => {});
   }, []);
@@ -143,6 +145,27 @@ export default function RecommendPage() {
           </a>
         )}
       </div>
+
+      {/* 冷啟動引導 */}
+      {bookCount !== null && bookCount < 10 && (
+        <div className={`p-3 rounded border text-sm ${
+          bookCount === 0
+            ? "bg-zinc-50 border-zinc-200 text-zinc-500"
+            : bookCount < 3
+            ? "bg-amber-50 border-amber-200 text-amber-700"
+            : "bg-blue-50 border-blue-200 text-blue-700"
+        }`}>
+          {bookCount === 0 && (
+            <>還沒有書單。<a href="/" className="underline">先去加幾本</a>，3 本就夠跑出第一次推薦。</>
+          )}
+          {bookCount >= 1 && bookCount < 3 && (
+            <>你有 {bookCount} 本書，再多加 {3 - bookCount} 本就可以試了。<a href="/" className="underline ml-1">去加書</a></>
+          )}
+          {bookCount >= 3 && bookCount < 10 && (
+            <>你有 {bookCount} 本書，已經夠了，現在就可以跑推薦。書越多越準，但不用等到完美再開始。</>
+          )}
+        </div>
+      )}
 
       <section className="space-y-4 p-4 bg-white border border-zinc-200 rounded">
         <div>
